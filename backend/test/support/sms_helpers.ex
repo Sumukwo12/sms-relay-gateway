@@ -1,0 +1,24 @@
+defmodule Backend.SmsHelpers do
+  @moduledoc """
+  Test helpers for the SMS flow. The app runs with `Backend.Modem.Mock`
+  in test, whose state is global, so tests using this must not be async.
+  """
+
+  alias Backend.Modem.Mock
+
+  @doc "Clear stored codes, rate limits and the mock modem's outbox."
+  def reset_sms_state(_context \\ %{}) do
+    Cachex.clear(:code_store)
+    Cachex.clear(:rate_limit_store)
+    Mock.reset()
+    :ok
+  end
+
+  @doc "Extract the verification code from the last SMS sent to `phone`."
+  def sent_code(phone) do
+    case Mock.last_message(phone) do
+      %{body: body} -> body |> then(&Regex.run(~r/\d{6}/, &1)) |> hd()
+      nil -> nil
+    end
+  end
+end
