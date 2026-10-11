@@ -12,6 +12,7 @@ defmodule Backend.CodeStore do
   """
 
   require Logger
+  alias Backend.PhoneUtils
 
   @cache :code_store
 
@@ -19,12 +20,15 @@ defmodule Backend.CodeStore do
   @spec put(String.t(), String.t(), pos_integer()) :: :ok
   def put(phone, code, ttl_seconds) do
     {:ok, _} = Cachex.put(@cache, phone, %{code: code, attempts: 0}, ttl: ttl_seconds * 1_000)
-    Logger.debug("[CodeStore] Stored code for #{phone} TTL=#{ttl_seconds}s")
+    Logger.debug("[CodeStore] Stored code for #{PhoneUtils.mask(phone)} TTL=#{ttl_seconds}s")
     :ok
   end
 
   @doc """
   Verify a submitted code against the stored code.
+
+  The check and attempt count increment/removal are performed atomically
+  inside a Cachex transaction, preserving the key's TTL.
 
   Returns:
     - `:ok`                           — matched; entry deleted (one-time use)
@@ -36,22 +40,55 @@ defmodule Backend.CodeStore do
   @spec verify(String.t(), String.t()) ::
           :ok
           | {:error, :invalid_code | :too_many_attempts | :expired_or_missing | :cache_error}
-  def verify(phone, submitted) do
-    case Cachex.get(@cache, phone) do
-      {:ok, nil} ->
-        {:error, :expired_or_missing}
+  def verify(phone, submitted) when is_binary(submitted) do
+    clean_code = String.trim(submitted)
+    masked_phone = PhoneUtils.mask(phone)
 
-      {:ok, %{code: stored, attempts: attempts}} ->
-        if Plug.Crypto.secure_compare(stored, String.trim(submitted)) do
-          Cachex.del(@cache, phone)
-          Logger.info("[CodeStore] Code verified for #{phone}")
-          :ok
-        else
-          record_failed_attempt(phone, stored, attempts + 1)
+    result =
+      Cachex.transaction(@cache, [phone], fn _ ->
+        case Cachex.get(@cache, phone) do
+          {:ok, nil} ->
+            {:error, :expired_or_missing}
+
+          {:ok, %{code: stored, attempts: attempts}} ->
+            if Plug.Crypto.secure_compare(stored, clean_code) do
+              Cachex.del(@cache, phone)
+              Logger.info("[CodeStore] Code verified for #{masked_phone}")
+              :ok
+            else
+              new_attempts = attempts + 1
+
+              if new_attempts >= max_attempts() do
+                Cachex.del(@cache, phone)
+
+                Logger.warning(
+                  "[CodeStore] Too many invalid attempts for #{masked_phone}; code discarded"
+                )
+
+                {:error, :too_many_attempts}
+              else
+                Cachex.update(@cache, phone, %{code: stored, attempts: new_attempts})
+
+                Logger.warning(
+                  "[CodeStore] Invalid code attempt #{new_attempts} for #{masked_phone}"
+                )
+
+                {:error, :invalid_code}
+              end
+            end
+
+          {:error, reason} ->
+            Logger.error("[CodeStore] Cache error: #{inspect(reason)}")
+            {:error, :cache_error}
         end
+      end)
+
+    case result do
+      {:ok, res} ->
+        res
 
       {:error, reason} ->
-        Logger.error("[CodeStore] Cache error: #{inspect(reason)}")
+        Logger.error("[CodeStore] Transaction error: #{inspect(reason)}")
         {:error, :cache_error}
     end
   end
@@ -71,19 +108,6 @@ defmodule Backend.CodeStore do
   def delete(phone) do
     Cachex.del(@cache, phone)
     :ok
-  end
-
-  defp record_failed_attempt(phone, code, attempts) do
-    if attempts >= max_attempts() do
-      Cachex.del(@cache, phone)
-      Logger.warning("[CodeStore] Too many invalid attempts for #{phone}; code discarded")
-      {:error, :too_many_attempts}
-    else
-      # Cachex.update/3 keeps the existing TTL
-      Cachex.update(@cache, phone, %{code: code, attempts: attempts})
-      Logger.warning("[CodeStore] Invalid code attempt #{attempts} for #{phone}")
-      {:error, :invalid_code}
-    end
   end
 
   defp max_attempts, do: Application.get_env(:backend, :max_verify_attempts, 5)

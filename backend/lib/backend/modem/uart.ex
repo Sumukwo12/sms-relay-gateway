@@ -50,7 +50,9 @@ if Code.ensure_loaded?(Circuits.UART) do
     end
 
     @impl Backend.Modem
-    def status, do: GenServer.call(__MODULE__, :status)
+    def status do
+      :persistent_term.get({__MODULE__, :status}, :disconnected)
+    end
 
     # ── GenServer callbacks ─────────────────────────────────────────────────
 
@@ -65,6 +67,7 @@ if Code.ensure_loaded?(Circuits.UART) do
         status: :disconnected
       }
 
+      set_status(:disconnected)
       {:ok, state, {:continue, :connect}}
     end
 
@@ -76,28 +79,42 @@ if Code.ensure_loaded?(Circuits.UART) do
     def handle_info(:reconnect, state), do: {:noreply, state}
 
     @impl true
-    def handle_call(:status, _from, state), do: {:reply, state.status, state}
+    def handle_call(:status, _from, state) do
+      {:reply, :persistent_term.get({__MODULE__, :status}, state.status), state}
+    end
 
     def handle_call({:send_sms, _, _}, _from, %{status: :disconnected} = state),
       do: {:reply, {:error, :modem_disconnected}, state}
 
     def handle_call({:send_sms, phone, message}, _from, state) do
+      masked_phone = Backend.PhoneUtils.mask(phone)
+      set_status(:busy)
+
       case do_send(state.uart, phone, message) do
         :ok ->
-          Logger.info("[Modem] SMS sent to #{phone}")
+          set_status(:ready)
+          Logger.info("[Modem] SMS sent to #{masked_phone}")
           {:reply, :ok, state}
 
         {:error, reason} when reason in @fatal_errors ->
           Logger.error(
-            "[Modem] Lost #{state.port} (#{inspect(reason)}) while sending to #{phone}"
+            "[Modem] Lost #{state.port} (#{inspect(reason)}) while sending to #{masked_phone}"
           )
 
           {:reply, {:error, :modem_disconnected}, disconnect(state)}
 
         {:error, reason} = err ->
-          Logger.error("[Modem] Send to #{phone} failed: #{inspect(reason)}")
+          set_status(:ready)
+          Logger.error("[Modem] Send to #{masked_phone} failed: #{inspect(reason)}")
           {:reply, err, state}
       end
+    end
+
+    @impl true
+    def terminate(_reason, state) do
+      set_status(:disconnected)
+      UART.close(state.uart)
+      :ok
     end
 
     # ── Connection management ───────────────────────────────────────────────
@@ -106,6 +123,7 @@ if Code.ensure_loaded?(Circuits.UART) do
       with :ok <- UART.open(state.uart, state.port, speed: state.baud, active: false),
            :ok <- init_modem(state.uart) do
         Logger.info("[Modem] Ready on #{state.port} @ #{state.baud} baud (SMS text mode)")
+        set_status(:ready)
         %{state | status: :ready}
       else
         {:error, reason} ->
@@ -120,8 +138,14 @@ if Code.ensure_loaded?(Circuits.UART) do
 
     defp disconnect(state) do
       UART.close(state.uart)
+      set_status(:disconnected)
       Process.send_after(self(), :reconnect, @reconnect_interval)
       %{state | status: :disconnected}
+    end
+
+    defp set_status(status) do
+      :persistent_term.put({__MODULE__, :status}, status)
+      status
     end
 
     defp init_modem(uart) do

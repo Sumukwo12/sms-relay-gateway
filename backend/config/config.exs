@@ -31,6 +31,9 @@ config :backend,
   android_sms_user: "",
   android_sms_pass: "",
 
+  # SMS Relay phone token (used when MODEM_ADAPTER=phone)
+  phone_gateway_token: nil,
+
   # How long (seconds) a generated code remains valid before expiring
   code_ttl_seconds: 300,
 
@@ -39,6 +42,15 @@ config :backend,
 
   # Max SMS sends allowed per phone number within a 1-hour rolling window
   rate_limit_per_hour: 3,
+
+  # Max SMS sends allowed per client IP within a 1-hour rolling window
+  rate_limit_per_ip_per_hour: 5,
+
+  # Max total SMS sends allowed globally across all clients within a 1-hour rolling window
+  rate_limit_global_per_hour: 100,
+
+  # Whether to trust X-Forwarded-For headers from reverse proxies for client IP
+  trust_proxy: false,
 
   # Wrong guesses allowed before a code is discarded
   max_verify_attempts: 5,
@@ -71,6 +83,9 @@ config :phoenix_live_view, :colocated_assets, disable_symlink_warning: true
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+
+# Filter sensitive parameters from logs (including WebSocket connect params)
+config :phoenix, :filter_parameters, ["password", "token"]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

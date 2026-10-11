@@ -45,6 +45,53 @@ defmodule Backend.SmsGatewayTest do
       assert {:ok, :sent} = SmsGateway.send_verification_code("+254700000001")
     end
 
+    test "concurrent requests to the same number: at most limit succeed" do
+      # Fire 20 parallel requests to @phone
+      tasks =
+        for _ <- 1..20 do
+          Task.async(fn ->
+            SmsGateway.send_verification_code(@phone)
+          end)
+        end
+
+      results = Task.await_many(tasks)
+      successful = Enum.count(results, &(&1 == {:ok, :sent}))
+      rate_limited = Enum.count(results, &match?({:error, :rate_limited, _}, &1))
+
+      assert successful == 3
+      assert rate_limited == 17
+      assert successful + rate_limited == 20
+    end
+
+    test "enforces per-client-IP rate limit" do
+      ip = "198.51.100.5"
+
+      for i <- 1..5 do
+        phone = "+25470000000#{i}"
+        assert {:ok, :sent} = SmsGateway.send_verification_code(phone, client_ip: ip)
+      end
+
+      # 6th send with the same IP must be rate limited even with a fresh phone number
+      assert {:error, :rate_limited, retry_after} =
+               SmsGateway.send_verification_code("+254700000099", client_ip: ip)
+
+      assert retry_after > 0
+    end
+
+    test "enforces global rate limit cap" do
+      Application.put_env(:backend, :rate_limit_global_per_hour, 10)
+      on_exit(fn -> Application.put_env(:backend, :rate_limit_global_per_hour, 100) end)
+
+      for i <- 1..10 do
+        phone = "+25471100000#{i}"
+        assert {:ok, :sent} = SmsGateway.send_verification_code(phone, client_ip: "10.0.0.#{i}")
+      end
+
+      # 11th send must be rate limited by global cap
+      assert {:error, :rate_limited, _} =
+               SmsGateway.send_verification_code("+254799999999", client_ip: "10.0.0.99")
+    end
+
     test "reports a disconnected modem without storing a code or using up the rate limit" do
       Mock.set_status(:disconnected)
 
@@ -90,6 +137,27 @@ defmodule Backend.SmsGatewayTest do
 
       assert {:error, :too_many_attempts} = SmsGateway.verify_code(@phone, wrong(code))
       assert {:error, :expired_or_missing} = SmsGateway.verify_code(@phone, code)
+    end
+
+    test "50 parallel wrong guesses yield at most max_verify_attempts invalid_code responses and then too_many_attempts / expired_or_missing" do
+      max_attempts = Application.get_env(:backend, :max_verify_attempts, 5)
+
+      tasks =
+        for _ <- 1..50 do
+          Task.async(fn ->
+            SmsGateway.verify_code(@phone, "000000")
+          end)
+        end
+
+      results = Task.await_many(tasks)
+
+      invalid_count = Enum.count(results, &(&1 == {:error, :invalid_code}))
+      too_many_count = Enum.count(results, &(&1 == {:error, :too_many_attempts}))
+      expired_or_missing_count = Enum.count(results, &(&1 == {:error, :expired_or_missing}))
+
+      assert invalid_count <= max_attempts
+      assert invalid_count + too_many_count + expired_or_missing_count == 50
+      assert too_many_count + expired_or_missing_count > 0
     end
 
     test "a new code replaces the previous one", %{code: first} do

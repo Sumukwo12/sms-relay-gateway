@@ -47,10 +47,68 @@ defmodule BackendWeb.SmsControllerTest do
       assert %{"error" => "modem_disconnected"} = json_response(conn, 503)
     end
 
-    test "502 when the modem rejects the message", %{conn: conn} do
+    test "502 when the modem rejects the message does not leak internal detail", %{conn: conn} do
       Mock.set_status({:failing, {:cms_error, "500"}})
       conn = post(conn, ~p"/api/send-code", %{phone: @phone})
-      assert %{"error" => "modem_error"} = json_response(conn, 502)
+      resp = json_response(conn, 502)
+      assert %{"error" => "modem_error"} = resp
+      refute Map.has_key?(resp, "detail")
+    end
+
+    test "429 when client IP exceeds rate limit" do
+      ip = {198, 51, 100, 42}
+
+      # 5 requests from the same IP to different phone numbers should succeed
+      for i <- 1..5 do
+        conn = %{build_conn() | remote_ip: ip}
+        conn = post(conn, ~p"/api/send-code", %{phone: "+25470000000#{i}"})
+        assert json_response(conn, 200)["success"] == true
+      end
+
+      # 6th request from the same IP should be blocked by IP rate limit
+      conn = %{build_conn() | remote_ip: ip}
+      conn = post(conn, ~p"/api/send-code", %{phone: "+254700000099"})
+
+      assert %{"error" => "rate_limited", "retry_after_seconds" => retry} =
+               json_response(conn, 429)
+
+      assert retry > 0
+    end
+
+    test "extracts client IP from right-most X-Forwarded-For entry when trust_proxy is true" do
+      Application.put_env(:backend, :trust_proxy, true)
+      on_exit(fn -> Application.put_env(:backend, :trust_proxy, false) end)
+
+      xff = "192.168.1.1, 203.0.113.195"
+
+      for i <- 1..5 do
+        conn =
+          build_conn()
+          |> put_req_header("x-forwarded-for", xff)
+          |> post(~p"/api/send-code", %{phone: "+25470000001#{i}"})
+
+        assert json_response(conn, 200)["success"] == true
+      end
+
+      # 6th request with the same right-most IP is rate limited
+      conn =
+        build_conn()
+        |> put_req_header("x-forwarded-for", xff)
+        |> post(~p"/api/send-code", %{phone: "+254700000099"})
+
+      assert %{"error" => "rate_limited"} = json_response(conn, 429)
+    end
+
+    test "ignores X-Forwarded-For when trust_proxy is false" do
+      Application.put_env(:backend, :trust_proxy, false)
+
+      # Spoofed XFF header should be ignored, remote_ip is used instead
+      conn =
+        build_conn()
+        |> put_req_header("x-forwarded-for", "1.2.3.4")
+        |> post(~p"/api/send-code", %{phone: @phone})
+
+      assert json_response(conn, 200)["success"] == true
     end
   end
 

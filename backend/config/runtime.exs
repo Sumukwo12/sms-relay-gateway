@@ -34,11 +34,23 @@ if config_env() != :test do
   end
 
   case System.get_env("MODEM_ADAPTER") do
-    nil -> :ok
-    "uart" -> config :backend, modem_adapter: Backend.Modem.UART
-    "mock" -> config :backend, modem_adapter: Backend.Modem.Mock
-    "android" -> config :backend, modem_adapter: Backend.Modem.Android
-    other -> raise "MODEM_ADAPTER must be \"uart\", \"mock\", or \"android\", got: #{inspect(other)}"
+    nil ->
+      :ok
+
+    "uart" ->
+      config :backend, modem_adapter: Backend.Modem.UART
+
+    "mock" ->
+      config :backend, modem_adapter: Backend.Modem.Mock
+
+    "android" ->
+      config :backend, modem_adapter: Backend.Modem.Android
+
+    "phone" ->
+      config :backend, modem_adapter: Backend.Modem.Phone
+
+    other ->
+      raise "MODEM_ADAPTER must be \"uart\", \"mock\", \"android\", or \"phone\", got: #{inspect(other)}"
   end
 
   [
@@ -47,9 +59,14 @@ if config_env() != :test do
     android_sms_url: System.get_env("ANDROID_SMS_URL"),
     android_sms_user: System.get_env("ANDROID_SMS_USER"),
     android_sms_pass: System.get_env("ANDROID_SMS_PASS"),
+    phone_gateway_token: System.get_env("PHONE_GATEWAY_TOKEN"),
     code_ttl_seconds: env_int.("CODE_TTL_SECONDS"),
     code_length: env_int.("CODE_LENGTH"),
     rate_limit_per_hour: env_int.("RATE_LIMIT_PER_HOUR"),
+    rate_limit_per_ip_per_hour: env_int.("RATE_LIMIT_PER_IP_PER_HOUR"),
+    rate_limit_global_per_hour: env_int.("RATE_LIMIT_GLOBAL_PER_HOUR"),
+    trust_proxy:
+      if(System.get_env("TRUST_PROXY"), do: System.get_env("TRUST_PROXY") == "true", else: nil),
     max_verify_attempts: env_int.("MAX_VERIFY_ATTEMPTS"),
     sms_template: System.get_env("SMS_TEMPLATE")
   ]
