@@ -78,7 +78,9 @@ defmodule Backend.MixProject do
   defp aliases do
     [
       setup: ["deps.get"],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      # Do not run "deps.unlock --unused" because optional dependencies
+      # like :circuits_uart are only loaded in prod or when MODEM_ADAPTER=uart.
+      precommit: ["compile --warnings-as-errors", "format", "test"]
     ]
   end
 end

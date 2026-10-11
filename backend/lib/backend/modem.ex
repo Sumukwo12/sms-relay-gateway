@@ -12,6 +12,9 @@ defmodule Backend.Modem do
       Android SMS Gateway app (https://sms-gate.app/) over local Wi-Fi.
       Set `MODEM_ADAPTER=android` plus `ANDROID_SMS_URL`, `ANDROID_SMS_USER`,
       and `ANDROID_SMS_PASS` environment variables.
+    - `Backend.Modem.Phone` — sends SMS via an Android phone running our SMS Relay
+      app connected over a Phoenix Channel WebSocket (`gateway:phone`). Set
+      `MODEM_ADAPTER=phone` and `PHONE_GATEWAY_TOKEN`.
     - `Backend.Modem.Mock` — in-memory modem that logs messages instead of
       sending them. Default in dev and test.
 
