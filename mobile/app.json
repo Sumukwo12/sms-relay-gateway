@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "SMS Relay",
+    "slug": "sms-relay",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.smsrelay.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#1E293B",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.SEND_SMS",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "android.permission.WAKE_LOCK"
+      ]
+    },
+    "plugins": [
+      "./plugins/withAndroidForegroundService.js",
+      "./plugins/withAndroidReleaseSigning.js"
+    ]
+  }
+}
