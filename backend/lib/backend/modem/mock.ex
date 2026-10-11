@@ -27,7 +27,7 @@ defmodule Backend.Modem.Mock do
   def send_sms(phone, message) do
     Agent.get_and_update(__MODULE__, fn
       %{status: :ready} = state ->
-        Logger.info("[Modem.Mock] SMS to #{phone}: #{message}")
+        Logger.info("[Modem.Mock] SMS to #{Backend.PhoneUtils.mask(phone)}: #{message}")
         entry = %{to: phone, body: message, sent_at: DateTime.utc_now()}
         {:ok, %{state | outbox: [entry | Enum.take(state.outbox, @outbox_limit - 1)]}}
 

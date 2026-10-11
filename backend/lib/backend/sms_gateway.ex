@@ -8,7 +8,7 @@ defmodule Backend.SmsGateway do
   ## Usage
 
       # 1. Send a code
-      case Backend.SmsGateway.send_verification_code("+254712345678") do
+      case Backend.SmsGateway.send_verification_code("+254712345678", client_ip: "192.168.1.100") do
         {:ok, :sent}                         -> # success
         {:error, :invalid_phone}             -> # bad number format
         {:error, :rate_limited, retry_secs}  -> # too many sends
@@ -27,33 +27,45 @@ defmodule Backend.SmsGateway do
 
   require Logger
 
-  alias Backend.{CodeGenerator, CodeStore, Modem, RateLimiter}
+  alias Backend.{CodeGenerator, CodeStore, Modem, PhoneUtils, RateLimiter}
 
   # ── Public API ──────────────────────────────────────────────────────────────
 
-  @doc "Generate and send a verification code via the USB GSM modem."
-  @spec send_verification_code(String.t()) ::
+  @doc "Generate and send a verification code via the configured modem adapter."
+  @spec send_verification_code(String.t(), String.t() | keyword() | map() | nil) ::
           {:ok, :sent}
           | {:error, :invalid_phone}
           | {:error, :rate_limited, non_neg_integer()}
           | {:error, :modem_disconnected}
           | {:error, :modem_busy}
           | {:error, :modem_error, term()}
-  def send_verification_code(phone_number) do
+  def send_verification_code(phone_number, opts_or_ip \\ nil) do
+    client_ip =
+      cond do
+        is_binary(opts_or_ip) -> opts_or_ip
+        is_list(opts_or_ip) -> Keyword.get(opts_or_ip, :client_ip)
+        is_map(opts_or_ip) -> Map.get(opts_or_ip, :client_ip) || Map.get(opts_or_ip, "client_ip")
+        true -> nil
+      end
+
     with {:ok, phone} <- validate_phone(phone_number),
-         :ok <- check_rate_limit(phone),
+         {:ok, reservation} <- RateLimiter.reserve(phone, client_ip),
          code = CodeGenerator.generate(),
-         :ok <- store_code(phone, code),
-         :ok <- deliver_sms(phone, code) do
-      RateLimiter.record(phone)
-      Logger.info("[Gateway] Code sent to #{phone}")
-      {:ok, :sent}
+         :ok <- store_code(phone, code) do
+      case deliver_sms(phone, code) do
+        :ok ->
+          Logger.info("[Gateway] Code sent to #{PhoneUtils.mask(phone)}")
+          {:ok, :sent}
+
+        {:error, reason} = err ->
+          # Send failed; release reserved rate limit slot
+          RateLimiter.release(reservation)
+          wrap_modem_error(err, reason)
+      end
     else
       {:error, :invalid_phone} = err -> err
       {:error, :rate_limited, _} = err -> err
-      {:error, :modem_disconnected} = err -> err
-      {:error, :modem_busy} = err -> err
-      {:error, reason} -> {:error, :modem_error, reason}
+      {:error, reason} -> wrap_modem_error({:error, reason}, reason)
     end
   end
 
@@ -113,6 +125,10 @@ defmodule Backend.SmsGateway do
 
   # ── Private helpers ─────────────────────────────────────────────────────────
 
+  defp wrap_modem_error({:error, :modem_disconnected} = err, _), do: err
+  defp wrap_modem_error({:error, :modem_busy} = err, _), do: err
+  defp wrap_modem_error(_err, reason), do: {:error, :modem_error, reason}
+
   # E.164 format: +<1-3 digit country code><subscriber number>, total 8-15 digits.
   # Spaces, dashes, dots and parentheses are stripped first ("+254 712-345 678").
   defp validate_phone(phone) when is_binary(phone) do
@@ -121,21 +137,14 @@ defmodule Backend.SmsGateway do
     if Regex.match?(~r/^\+[1-9]\d{7,14}$/, cleaned) do
       {:ok, cleaned}
     else
-      Logger.warning("[Gateway] Invalid phone: #{inspect(phone)}")
+      Logger.warning("[Gateway] Invalid phone: #{PhoneUtils.mask(phone)}")
       {:error, :invalid_phone}
     end
   end
 
   defp validate_phone(phone) do
-    Logger.warning("[Gateway] Invalid phone: #{inspect(phone)}")
+    Logger.warning("[Gateway] Invalid phone: #{PhoneUtils.mask(phone)}")
     {:error, :invalid_phone}
-  end
-
-  defp check_rate_limit(phone) do
-    case RateLimiter.check(phone) do
-      {:ok, _} -> :ok
-      {:error, :rate_limited, retry_after} -> {:error, :rate_limited, retry_after}
-    end
   end
 
   defp store_code(phone, code), do: CodeStore.put(phone, code, code_ttl_seconds())
