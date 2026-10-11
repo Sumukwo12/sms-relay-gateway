@@ -1,0 +1,7 @@
+{
+  "name": "sms-sender",
+  "version": "1.0.0",
+  "description": "Silent background SMS sender module for Android",
+  "main": "index.ts",
+  "types": "index.ts"
+}

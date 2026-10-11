@@ -1,0 +1,10 @@
+{
+  "name": "sms-sender",
+  "platforms": ["android"],
+  "android": {
+    "package": "expo.modules.smssender",
+    "modules": [
+      "expo.modules.smssender.SmsSenderModule"
+    ]
+  }
+}
