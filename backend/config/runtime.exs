@@ -68,10 +68,33 @@ if config_env() != :test do
     trust_proxy:
       if(System.get_env("TRUST_PROXY"), do: System.get_env("TRUST_PROXY") == "true", else: nil),
     max_verify_attempts: env_int.("MAX_VERIFY_ATTEMPTS"),
-    sms_template: System.get_env("SMS_TEMPLATE")
+    sms_template: System.get_env("SMS_TEMPLATE"),
+    daily_send_limit: env_int.("DAILY_SEND_LIMIT"),
+    message_max_attempts: env_int.("MESSAGE_MAX_ATTEMPTS"),
+    message_ttl_seconds: env_int.("MESSAGE_TTL_SECONDS"),
+    public_api_enabled:
+      if(System.get_env("PUBLIC_API"), do: System.get_env("PUBLIC_API") == "true", else: nil)
   ]
   |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   |> then(&config(:backend, &1))
+
+  # One key per internal system: "billing:key1,crm:key2"
+  if keys = System.get_env("API_KEYS") do
+    api_keys =
+      keys
+      |> String.split(",", trim: true)
+      |> Map.new(fn pair ->
+        case pair |> String.trim() |> String.split(":", parts: 2) do
+          [name, key] when name != "" and byte_size(key) >= 16 ->
+            {String.trim(name), String.trim(key)}
+
+          _ ->
+            raise "API_KEYS entries must look like name:key with keys of at least 16 characters"
+        end
+      end)
+
+    config :backend, api_keys: api_keys
+  end
 
   # Comma-separated list, e.g. "https://app.example.com,http://localhost:3000"
   if origins = System.get_env("FRONTEND_ORIGIN") do
@@ -109,6 +132,14 @@ if config_env() == :prod do
       """
 
   host = System.get_env("PHX_HOST") || "example.com"
+
+  config :backend, Backend.Repo,
+    database:
+      System.get_env("DATABASE_PATH") ||
+        raise(
+          "environment variable DATABASE_PATH is missing, e.g. /var/lib/sms-gateway/gateway.db"
+        ),
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5")
 
   config :backend, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

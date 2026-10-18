@@ -135,11 +135,71 @@ default to the real modem.
 | `SMS_TEMPLATE`                | see `config/config.exs`   | SMS body; `%{code}` is replaced with the code                   |
 | `FRONTEND_ORIGIN`             | `http://localhost:3000`   | Comma-separated origins allowed by CORS                         |
 | `PORT`                        | `4000`                    | HTTP port                                                       |
+| `API_KEYS`                    | –                         | `/v1` keys, one per system: `billing:key1,crm:key2` (keys ≥ 16 chars) |
+| `PUBLIC_API`                  | `true`                    | `false` disables the unauthenticated `/api/send-code` + `/api/verify-code` |
+| `DAILY_SEND_LIMIT`            | `500`                     | Max SMS sent from the outbox per rolling 24h (protects your bundle) |
+| `MESSAGE_MAX_ATTEMPTS`        | `3`                       | Send attempts per queued message before it is marked `failed`   |
+| `MESSAGE_TTL_SECONDS`         | `86400`                   | How long a notification may wait in the queue (OTPs expire with their code) |
+| `DATABASE_PATH`               | `backend_dev.db` (dev)    | SQLite file for the outbox. **Required in prod**                |
 
 Frontend: `NEXT_PUBLIC_API_URL` (default `http://localhost:4000`), set at
 build time. See `frontend/.env.example`.
 
-## API
+## Integration API (`/v1`) — for your own systems
+
+Your other systems send verification codes and notifications through the
+`/v1` API. Each system gets its own key in `API_KEYS` and sends it as
+`Authorization: Bearer <key>` (or `X-Api-Key: <key>`). Generate a key with
+`mix phx.gen.secret 32`.
+
+Messages are stored in an SQLite outbox and sent **one at a time** through
+the modem/phone. If the phone is offline they wait in the queue and go out
+as soon as it reconnects; failed sends are retried with backoff (15s, 30s,
+60s…). Restarts don't lose queued messages.
+
+| Method & path            | Body                                                | Success |
+| ------------------------ | --------------------------------------------------- | ------- |
+| `POST /v1/messages`      | `{"to", "body", "reference"?, "callback_url"?}`     | `202 {success, message}` |
+| `GET /v1/messages/:id`   | –                                                   | `200 {success, message}` |
+| `POST /v1/otp/send`      | `{"phone", "reference"?, "callback_url"?}`          | `202 {success, message, expires_in_seconds}` |
+| `POST /v1/otp/verify`    | `{"phone", "code"}`                                 | `200 {success: true, verified: true}` |
+| `GET /v1/status`         | –                                                   | `200 {modem: {status, ready, device}, queue: {pending, sent_last_24h, daily_limit}}` |
+
+`body` is at most 480 characters (3 SMS parts). A `message` looks like:
+
+```json
+{
+  "id": "msg_90ec3f69c57ba1862a1a", "kind": "notification", "to": "+254712345678",
+  "status": "sent", "attempts": 1, "error": null, "reference": "order-7",
+  "created_at": "...", "sent_at": "...", "delivered_at": null, "failed_at": null, "expires_at": "..."
+}
+```
+
+`status` goes `queued → sending → sent → delivered`, or ends in `failed`
+(`error` says why: e.g. `expired`, or the phone's send error). `delivered`
+needs the carrier to return a delivery report, which not every network does.
+Message bodies are never returned, and OTP bodies are erased once sent.
+
+Example:
+
+```sh
+curl -X POST https://sms.example.com/v1/messages \
+  -H "Authorization: Bearer $SMS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"to": "+254712345678", "body": "Your order #7 has shipped", "reference": "order-7"}'
+```
+
+**Webhooks.** With `callback_url`, the gateway POSTs
+`{"event": "message.sent" | "message.delivered" | "message.failed", "message": {...}}`
+on each status change. Verify it with the `X-Signature` header:
+`sha256=` + hex HMAC-SHA256 of the raw request body, keyed with your API key.
+
+Errors: `401 unauthorized`, `404 not_found`, `422 invalid_request (+field)`,
+`429 rate_limited | daily_limit_reached | too_many_attempts`.
+
+## Demo API (`/api`, used by the Next.js frontend)
+
+These endpoints need no key, so turn them off with `PUBLIC_API=false` once the
+backend is public and only your systems should trigger SMS.
 
 | Method & path                | Body                     | Success                                         |
 | ---------------------------- | ------------------------ | ----------------------------------------------- |

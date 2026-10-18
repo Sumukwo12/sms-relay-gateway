@@ -21,4 +21,16 @@ defmodule Backend.SmsHelpers do
       nil -> nil
     end
   end
+
+  @doc "Make a queued message due now (skips its retry backoff)."
+  def make_due(id) do
+    import Ecto.Query
+
+    Backend.Repo.update_all(
+      from(m in Backend.Messages.Message, where: m.id == ^id),
+      set: [next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second)]
+    )
+
+    :ok
+  end
 end

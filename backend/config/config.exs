@@ -8,6 +8,7 @@
 import Config
 
 config :backend,
+  ecto_repos: [Backend.Repo],
   generators: [timestamp_type: :utc_datetime],
 
   # ── SMS Gateway Configuration ────────────────────────────────────────────
@@ -59,7 +60,34 @@ config :backend,
   sms_template: "Your verification code is: %{code}. It expires in 5 minutes. Do not share it.",
 
   # Browser origins allowed to call the JSON API (the Next.js frontend)
-  cors_origins: ["http://localhost:3000"]
+  cors_origins: ["http://localhost:3000"],
+
+  # ── Integration API (/v1) ────────────────────────────────────────────────
+  # One key per internal system, as %{"system_name" => "secret_key"}.
+  # Env: API_KEYS="billing:key1,crm:key2"
+  api_keys: %{},
+
+  # Whether the unauthenticated /api/send-code + /api/verify-code endpoints
+  # (used by the demo frontend) are enabled. Env: PUBLIC_API=true|false
+  public_api_enabled: true,
+
+  # Max SMS the outbox sends per rolling 24 hours, to protect the SIM bundle.
+  # Env: DAILY_SEND_LIMIT
+  daily_send_limit: 500,
+
+  # Delivery attempts per message before it is marked failed
+  message_max_attempts: 3,
+
+  # Seconds a queued notification may wait (e.g. phone offline) before it
+  # expires undelivered. OTP messages expire with their code instead.
+  # Env: MESSAGE_TTL_SECONDS
+  message_ttl_seconds: 86_400,
+
+  # How often (ms) the outbox looks for due or retryable messages.
+  # nil disables the timer (tests drive the outbox explicitly).
+  outbox_poll_ms: 5_000
+
+config :backend, Backend.Repo, journal_mode: :wal
 
 # Configure the endpoint
 config :backend, BackendWeb.Endpoint,
