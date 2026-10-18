@@ -82,11 +82,31 @@ defmodule Backend.Modem.StatusTest do
     end
   end
 
+  # Polls instead of sleeping a fixed time: the first HTTP request can be slow
+  # while the connection pool warms up.
+  defp wait_for_status(expected, timeout_ms \\ 2_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_wait_for_status(expected, deadline)
+  end
+
+  defp do_wait_for_status(expected, deadline) do
+    cond do
+      Android.status() == expected ->
+        true
+
+      System.monotonic_time(:millisecond) > deadline ->
+        false
+
+      true ->
+        Process.sleep(10)
+        do_wait_for_status(expected, deadline)
+    end
+  end
+
   test "status/0 returns within 100ms (and reports :busy) while a send is in progress" do
     # Trigger health check to be ready
     send(GenServer.whereis(Android), :check_health)
-    Process.sleep(50)
-    assert Android.status() == :ready
+    assert wait_for_status(:ready)
 
     # Start a send in a separate Task (takes ~800ms)
     send_task =
@@ -94,8 +114,8 @@ defmodule Backend.Modem.StatusTest do
         Android.send_sms("+254712345678", "Code: 123456")
       end)
 
-    # Wait briefly for the task to initiate the send and set status to :busy
-    Process.sleep(50)
+    # Wait for the task to initiate the send and set status to :busy
+    assert wait_for_status(:busy)
 
     # Measure status() duration while send is in progress
     {duration_us, status} = :timer.tc(fn -> Android.status() end)
