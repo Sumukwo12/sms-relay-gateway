@@ -28,6 +28,15 @@ defmodule Backend.Modem do
   @callback send_sms(phone :: String.t(), message :: String.t()) :: :ok | {:error, term()}
   @callback status() :: status()
 
+  @doc """
+  Optional: send with options. `:id` is the outbox message id, which
+  adapters that report delivery (the SMS Relay phone) pass to the device so
+  its sent/delivered reports can be matched back to the message.
+  """
+  @callback send_sms(phone :: String.t(), message :: String.t(), opts :: keyword()) ::
+              :ok | {:error, term()}
+  @optional_callbacks send_sms: 3
+
   def child_spec(opts) do
     adapter = adapter()
 
@@ -45,9 +54,15 @@ defmodule Backend.Modem do
     %{id: __MODULE__, start: {adapter, :start_link, [opts]}}
   end
 
-  @doc "Send an SMS. Returns `:ok` or `{:error, reason}`."
-  @spec send_sms(String.t(), String.t()) :: :ok | {:error, term()}
-  def send_sms(phone, message), do: adapter().send_sms(phone, message)
+  @doc "Send an SMS. Returns `:ok` or `{:error, reason}`. See `c:send_sms/3` for `opts`."
+  @spec send_sms(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def send_sms(phone, message, opts \\ []) do
+    adapter = adapter()
+
+    if opts != [] and function_exported?(adapter, :send_sms, 3),
+      do: adapter.send_sms(phone, message, opts),
+      else: adapter.send_sms(phone, message)
+  end
 
   @doc "Current modem status — :ready | :busy | :disconnected"
   @spec status() :: status()

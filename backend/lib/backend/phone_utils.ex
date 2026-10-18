@@ -4,6 +4,22 @@ defmodule Backend.PhoneUtils do
   """
 
   @doc """
+  Normalize a phone number to E.164: strips spaces, dashes, dots and
+  parentheses ("+254 712-345 678" → "+254712345678"), then requires
+  +<country code><subscriber>, 8-15 digits in total.
+  """
+  @spec normalize(term()) :: {:ok, String.t()} | {:error, :invalid_phone}
+  def normalize(phone) when is_binary(phone) do
+    cleaned = String.replace(phone, ~r/[\s\-().]/, "")
+
+    if Regex.match?(~r/^\+[1-9]\d{7,14}$/, cleaned),
+      do: {:ok, cleaned},
+      else: {:error, :invalid_phone}
+  end
+
+  def normalize(_), do: {:error, :invalid_phone}
+
+  @doc """
   Masks a phone number for safe logging, preserving country code and last 3 digits.
 
   ## Examples

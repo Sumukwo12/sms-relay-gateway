@@ -19,7 +19,8 @@ defmodule BackendWeb.ChannelCase do
     end
   end
 
-  setup _tags do
+  setup tags do
+    Backend.DataCase.setup_sandbox(tags)
     :ok
   end
 end

@@ -185,6 +185,8 @@ defmodule BackendWeb.GatewayChannelTest do
       "app_version" => "1.0.0"
     })
 
+    # Both pushes are handled by the channel first, then forwarded to the modem
+    _ = :sys.get_state(socket.channel_pid)
     _ = :sys.get_state(PhoneModem)
 
     assert PhoneModem.get_device_info() == %{
@@ -192,5 +194,35 @@ defmodule BackendWeb.GatewayChannelTest do
              "signal" => 4,
              "app_version" => "1.0.0"
            }
+  end
+
+  describe "outbox delivery reports" do
+    setup do
+      {:ok, message} = Backend.Messages.enqueue("test_system", %{to: "+254712345678", body: "hi"})
+      {:ok, message: message}
+    end
+
+    test "sms_delivered marks the outbox message delivered", %{message: message} do
+      {:ok, _, socket} =
+        connect_phone_socket() |> subscribe_and_join(GatewayChannel, "gateway:phone")
+
+      push(socket, "sms_delivered", %{"id" => message.id})
+      _ = :sys.get_state(socket.channel_pid)
+
+      assert %{status: "delivered"} = Backend.Messages.get(message.id)
+    end
+
+    test "a late sms_result still marks the message sent", %{message: message} do
+      Backend.Messages.checkout_next()
+      {:ok, _} = Backend.Messages.fail(message.id, :send_timeout)
+
+      {:ok, _, socket} =
+        connect_phone_socket() |> subscribe_and_join(GatewayChannel, "gateway:phone")
+
+      push(socket, "sms_result", %{"id" => message.id, "status" => "sent"})
+      _ = :sys.get_state(socket.channel_pid)
+
+      assert %{status: "sent"} = Backend.Messages.get(message.id)
+    end
   end
 end

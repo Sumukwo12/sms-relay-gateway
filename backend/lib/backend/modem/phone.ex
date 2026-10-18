@@ -37,12 +37,15 @@ defmodule Backend.Modem.Phone do
   end
 
   @impl Backend.Modem
-  def send_sms(phone, message) do
+  def send_sms(phone, message), do: send_sms(phone, message, [])
+
+  @impl Backend.Modem
+  def send_sms(phone, message, opts) do
     timeout_ms = get_send_timeout_ms()
     # Call with extra headroom over our internal timeout so handle_info({:timeout, id})
     # or the channel reply answers the caller cleanly.
     call_timeout = timeout_ms + 5_000
-    GenServer.call(__MODULE__, {:send_sms, phone, message}, call_timeout)
+    GenServer.call(__MODULE__, {:send_sms, phone, message, opts[:id]}, call_timeout)
   end
 
   @impl Backend.Modem
@@ -168,11 +171,11 @@ defmodule Backend.Modem.Phone do
   end
 
   @impl true
-  def handle_call({:send_sms, phone, message}, from, state) do
+  def handle_call({:send_sms, phone, message, id}, from, state) do
     if state.phone_pid == nil or not Process.alive?(state.phone_pid) do
       {:reply, {:error, :modem_disconnected}, state}
     else
-      id = generate_id()
+      id = id || generate_id()
       timer_ref = Process.send_after(self(), {:timeout, id}, state.send_timeout_ms)
       payload = %{"id" => id, "to" => phone, "body" => message}
 

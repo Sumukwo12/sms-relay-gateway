@@ -1,5 +1,19 @@
 import Config
 
+config :backend, Backend.Repo,
+  database: Path.expand("../backend_test.db", __DIR__),
+  pool_size: 5,
+  pool: Ecto.Adapters.SQL.Sandbox
+
+# Tests drive the outbox explicitly and run migrations through the mix alias
+config :backend,
+  outbox_poll_ms: nil,
+  outbox_kick_enabled: false,
+  run_migrations_on_boot: false,
+  api_keys: %{"test_system" => "test-api-key", "other_system" => "other-api-key"},
+  # Webhooks go to a Req.Test stub instead of the network
+  webhook_req_options: [plug: {Req.Test, Backend.Webhooks}, retry: false]
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :backend, BackendWeb.Endpoint,

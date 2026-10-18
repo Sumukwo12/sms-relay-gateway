@@ -27,7 +27,7 @@ defmodule Backend.SmsGateway do
 
   require Logger
 
-  alias Backend.{CodeGenerator, CodeStore, Modem, PhoneUtils, RateLimiter}
+  alias Backend.{CodeGenerator, CodeStore, Messages, Modem, Outbox, PhoneUtils, RateLimiter}
 
   # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -66,6 +66,44 @@ defmodule Backend.SmsGateway do
       {:error, :invalid_phone} = err -> err
       {:error, :rate_limited, _} = err -> err
       {:error, reason} -> wrap_modem_error({:error, reason}, reason)
+    end
+  end
+
+  @doc """
+  Generate a verification code and queue it in the outbox on behalf of an
+  integrated system (`client`). Unlike `send_verification_code/2` this
+  returns as soon as the message is queued; the queued SMS expires with the
+  code, so a code is never delivered after it stopped being valid.
+  """
+  @spec queue_verification_code(String.t(), String.t(), keyword()) ::
+          {:ok, Backend.Messages.Message.t()}
+          | {:error, :invalid_phone}
+          | {:error, :rate_limited, non_neg_integer()}
+          | {:error, :daily_limit_reached}
+  def queue_verification_code(phone_number, client, opts \\ []) do
+    with {:ok, phone} <- validate_phone(phone_number),
+         :ok <- check_capacity(),
+         {:ok, reservation} <- RateLimiter.reserve(phone, nil) do
+      code = CodeGenerator.generate()
+      :ok = store_code(phone, code)
+
+      attrs = %{
+        to: phone,
+        body: render_message(code),
+        reference: opts[:reference],
+        callback_url: opts[:callback_url]
+      }
+
+      case Messages.enqueue(client, attrs, kind: "otp", ttl_seconds: code_ttl_seconds()) do
+        {:ok, message} ->
+          Outbox.kick()
+          {:ok, message}
+
+        {:error, field, reason} ->
+          RateLimiter.release(reservation)
+          CodeStore.delete(phone)
+          {:error, {:invalid, field, reason}}
+      end
     end
   end
 
@@ -129,35 +167,30 @@ defmodule Backend.SmsGateway do
   defp wrap_modem_error({:error, :modem_busy} = err, _), do: err
   defp wrap_modem_error(_err, reason), do: {:error, :modem_error, reason}
 
-  # E.164 format: +<1-3 digit country code><subscriber number>, total 8-15 digits.
-  # Spaces, dashes, dots and parentheses are stripped first ("+254 712-345 678").
-  defp validate_phone(phone) when is_binary(phone) do
-    cleaned = String.replace(phone, ~r/[\s\-().]/, "")
-
-    if Regex.match?(~r/^\+[1-9]\d{7,14}$/, cleaned) do
-      {:ok, cleaned}
-    else
-      Logger.warning("[Gateway] Invalid phone: #{PhoneUtils.mask(phone)}")
-      {:error, :invalid_phone}
-    end
-  end
-
   defp validate_phone(phone) do
-    Logger.warning("[Gateway] Invalid phone: #{PhoneUtils.mask(phone)}")
-    {:error, :invalid_phone}
+    with {:error, :invalid_phone} = err <- PhoneUtils.normalize(phone) do
+      Logger.warning("[Gateway] Invalid phone: #{PhoneUtils.mask(phone)}")
+      err
+    end
   end
 
   defp store_code(phone, code), do: CodeStore.put(phone, code, code_ttl_seconds())
 
-  defp deliver_sms(phone, code) do
-    template =
-      Application.get_env(
-        :backend,
-        :sms_template,
-        "Your verification code is: %{code}. Valid for 5 minutes."
-      )
+  defp check_capacity do
+    if Outbox.capacity_available?(), do: :ok, else: {:error, :daily_limit_reached}
+  end
 
-    message = String.replace(template, "%{code}", code)
+  defp render_message(code) do
+    Application.get_env(
+      :backend,
+      :sms_template,
+      "Your verification code is: %{code}. Valid for 5 minutes."
+    )
+    |> String.replace("%{code}", code)
+  end
+
+  defp deliver_sms(phone, code) do
+    message = render_message(code)
 
     case Modem.send_sms(phone, message) do
       :ok ->

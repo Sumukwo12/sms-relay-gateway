@@ -6,13 +6,14 @@ defmodule BackendWeb.GatewayChannel do
     - Validates gateway authentication token on join.
     - Server pushes `"send_sms"` `%{id, to, body}` to the phone.
     - Phone pushes `"sms_result"` `%{id, status, error}` to the server.
-    - Phone pushes `"sms_delivered"` `%{id}` (logged).
+    - Phone pushes `"sms_delivered"` `%{id}` (marks outbox messages delivered).
     - Phone pushes `"device_info"` `%{battery, signal, app_version}` (telemetry).
   """
 
   use BackendWeb, :channel
   require Logger
 
+  alias Backend.{Messages, Outbox}
   alias Backend.Modem.Phone, as: PhoneModem
 
   @impl true
@@ -25,6 +26,8 @@ defmodule BackendWeb.GatewayChannel do
       case PhoneModem.register_phone(self()) do
         :ok ->
           Logger.info("[GatewayChannel] Phone connected: #{inspect(self())}")
+          # Send anything that queued up while the phone was offline
+          Outbox.kick()
           {:ok, socket}
 
         {:error, reason} ->
@@ -42,12 +45,15 @@ defmodule BackendWeb.GatewayChannel do
     status = Map.get(payload, "status")
     error = Map.get(payload, "error")
     PhoneModem.sms_result(id, status, error)
+    # Also covers results that arrive after the outbox stopped waiting
+    if is_binary(id), do: Messages.apply_phone_result(id, status, error)
     {:noreply, socket}
   end
 
   @impl true
-  def handle_in("sms_delivered", %{"id" => id}, socket) do
+  def handle_in("sms_delivered", %{"id" => id}, socket) when is_binary(id) do
     Logger.info("[GatewayChannel] SMS delivered: #{id}")
+    Messages.mark_delivered(id)
     {:noreply, socket}
   end
 
