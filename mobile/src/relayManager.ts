@@ -82,6 +82,9 @@ class RelayManager {
   private queue: SmsPayload[] = [];
   private isProcessingQueue = false;
   private handledMessageIds = new Set<string>();
+  // Final result per handled id, so a server retry of an id we already sent
+  // gets the result again instead of a second SMS.
+  private resultsById = new Map<string, { status: 'sent' | 'failed'; error: string | null }>();
   private isServiceRunning = false;
   private netInfoUnsubscribe: (() => void) | null = null;
   private deliverySubscription: any = null;
@@ -274,7 +277,13 @@ class RelayManager {
 
     // Check if ID was already handled or duplicate
     if (this.handledMessageIds.has(id)) {
-      console.warn(`[RelayManager] Ignoring duplicate SMS request id=${id}`);
+      const known = this.resultsById.get(id);
+      if (known) {
+        // The server retried (e.g. our earlier result was lost): re-report it
+        this.channel?.push('sms_result', { id, status: known.status, error: known.error });
+      } else {
+        console.warn(`[RelayManager] Ignoring duplicate SMS request id=${id} (still sending)`);
+      }
       return;
     }
 
@@ -304,11 +313,7 @@ class RelayManager {
     // Validate E.164 phone format
     if (!isValidE164(msg.to)) {
       const errorMsg = 'Recipient number must be valid E.164 format (e.g. +254...)';
-      this.channel?.push('sms_result', {
-        id: msg.id,
-        status: 'failed',
-        error: errorMsg,
-      });
+      this.reportResult(msg.id, 'failed', errorMsg);
       await this.recordLog(msg.id, maskedPhone, 'failed', errorMsg);
       return;
     }
@@ -316,11 +321,7 @@ class RelayManager {
     // Validate message length cap (480 characters)
     if (msg.body.length > 480) {
       const errorMsg = 'Message body exceeds 480 characters limit';
-      this.channel?.push('sms_result', {
-        id: msg.id,
-        status: 'failed',
-        error: errorMsg,
-      });
+      this.reportResult(msg.id, 'failed', errorMsg);
       await this.recordLog(msg.id, maskedPhone, 'failed', errorMsg);
       return;
     }
@@ -330,11 +331,7 @@ class RelayManager {
       const sendResult = await sendSms(msg.to, msg.body, subId, msg.id);
 
       // Report result back to server
-      this.channel?.push('sms_result', {
-        id: msg.id,
-        status: sendResult.status,
-        error: sendResult.error || null,
-      });
+      this.reportResult(msg.id, sendResult.status, sendResult.error || null);
 
       await this.recordLog(
         msg.id,
@@ -344,13 +341,19 @@ class RelayManager {
       );
     } catch (err: any) {
       const errorMsg = err?.message || 'Native SMS dispatch failure';
-      this.channel?.push('sms_result', {
-        id: msg.id,
-        status: 'failed',
-        error: errorMsg,
-      });
+      this.reportResult(msg.id, 'failed', errorMsg);
       await this.recordLog(msg.id, maskedPhone, 'failed', errorMsg);
     }
+  }
+
+  private reportResult(id: string, status: 'sent' | 'failed', error: string | null) {
+    this.resultsById.set(id, { status, error });
+    // Bound memory: Maps iterate in insertion order, so drop the oldest
+    if (this.resultsById.size > 500) {
+      const oldest = this.resultsById.keys().next().value;
+      if (oldest !== undefined) this.resultsById.delete(oldest);
+    }
+    this.channel?.push('sms_result', { id, status, error });
   }
 
   private async recordLog(
