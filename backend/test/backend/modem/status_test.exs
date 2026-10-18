@@ -29,16 +29,14 @@ defmodule Backend.Modem.StatusTest do
         GenServer.stop(pid, :normal, 1000)
     end
 
-    {:ok, modem_pid} = Android.start_link()
+    # Supervised so ExUnit stops it cleanly; stopping a linked process in
+    # on_exit races with the test process's own exit.
+    start_supervised!(Android)
 
     on_exit(fn ->
       Process.unlink(server_pid)
       Process.exit(server_pid, :kill)
       :gen_tcp.close(listen_socket)
-
-      if Process.alive?(modem_pid) do
-        GenServer.stop(modem_pid, :normal, 1000)
-      end
     end)
 
     %{port: port}
