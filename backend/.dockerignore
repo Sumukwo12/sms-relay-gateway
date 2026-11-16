@@ -1,0 +1,9 @@
+_build/
+deps/
+cover/
+tmp/
+test/
+*.db
+*.db-shm
+*.db-wal
+erl_crash.dump
