@@ -31,8 +31,8 @@ export default function App() {
   const [showPermissionModal, setShowPermissionModal] = useState(false);
 
   useEffect(() => {
-    // Initialize Relay state and storage
-    relayManager.initialize();
+    // Initialize Relay state and storage, then resume the relay if it was on
+    relayManager.initialize().then(() => relayManager.resumeIfEnabled());
 
     // Check runtime permissions on launch
     checkPermissions().then((status) => {
