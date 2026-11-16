@@ -6,9 +6,8 @@ defmodule Backend.SmsHelpers do
 
   alias Backend.Modem.Mock
 
-  @doc "Clear stored codes, rate limits and the mock modem's outbox."
+  @doc "Clear rate limits and the mock modem's outbox."
   def reset_sms_state(_context \\ %{}) do
-    Cachex.clear(:code_store)
     Cachex.clear(:rate_limit_store)
     Mock.reset()
     :ok

@@ -7,6 +7,7 @@ defmodule BackendWeb.GatewayChannel do
     - Server pushes `"send_sms"` `%{id, to, body}` to the phone.
     - Phone pushes `"sms_result"` `%{id, status, error}` to the server.
     - Phone pushes `"sms_delivered"` `%{id}` (marks outbox messages delivered).
+      The reply tells the phone it can drop the report from its retry buffer.
     - Phone pushes `"device_info"` `%{battery, signal, app_version}` (telemetry).
   """
 
@@ -54,7 +55,7 @@ defmodule BackendWeb.GatewayChannel do
   def handle_in("sms_delivered", %{"id" => id}, socket) when is_binary(id) do
     Logger.info("[GatewayChannel] SMS delivered: #{id}")
     Messages.mark_delivered(id)
-    {:noreply, socket}
+    {:reply, :ok, socket}
   end
 
   @impl true

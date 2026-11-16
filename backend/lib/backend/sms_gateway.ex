@@ -27,7 +27,19 @@ defmodule Backend.SmsGateway do
 
   require Logger
 
-  alias Backend.{CodeGenerator, CodeStore, Messages, Modem, Outbox, PhoneUtils, RateLimiter}
+  alias Backend.{
+    CodeGenerator,
+    CodeStore,
+    Messages,
+    Modem,
+    Outbox,
+    PhoneUtils,
+    RateLimiter,
+    Segments
+  }
+
+  # Codes requested through the unauthenticated demo API belong to this client
+  @public_client "public"
 
   # ── Public API ──────────────────────────────────────────────────────────────
 
@@ -36,6 +48,7 @@ defmodule Backend.SmsGateway do
           {:ok, :sent}
           | {:error, :invalid_phone}
           | {:error, :rate_limited, non_neg_integer()}
+          | {:error, :daily_limit_reached}
           | {:error, :modem_disconnected}
           | {:error, :modem_busy}
           | {:error, :modem_error, term()}
@@ -49,11 +62,13 @@ defmodule Backend.SmsGateway do
       end
 
     with {:ok, phone} <- validate_phone(phone_number),
-         {:ok, reservation} <- RateLimiter.reserve(phone, client_ip),
          code = CodeGenerator.generate(),
-         :ok <- store_code(phone, code) do
+         :ok <- check_capacity(Segments.count(render_message(code))),
+         {:ok, reservation} <- RateLimiter.reserve(phone, client_ip),
+         :ok <- store_code(@public_client, phone, code) do
       case deliver_sms(phone, code) do
         :ok ->
+          Messages.record_direct_send(@public_client, "otp", phone, render_message(code))
           Logger.info("[Gateway] Code sent to #{PhoneUtils.mask(phone)}")
           {:ok, :sent}
 
@@ -64,6 +79,7 @@ defmodule Backend.SmsGateway do
       end
     else
       {:error, :invalid_phone} = err -> err
+      {:error, :daily_limit_reached} = err -> err
       {:error, :rate_limited, _} = err -> err
       {:error, reason} -> wrap_modem_error({:error, reason}, reason)
     end
@@ -74,54 +90,78 @@ defmodule Backend.SmsGateway do
   integrated system (`client`). Unlike `send_verification_code/2` this
   returns as soon as the message is queued; the queued SMS expires with the
   code, so a code is never delivered after it stopped being valid.
+
+  With `:idempotency_key`, a repeated request returns `{:existing, message}`
+  for the code already queued instead of sending a new one.
   """
   @spec queue_verification_code(String.t(), String.t(), keyword()) ::
           {:ok, Backend.Messages.Message.t()}
+          | {:existing, Backend.Messages.Message.t()}
           | {:error, :invalid_phone}
           | {:error, :rate_limited, non_neg_integer()}
           | {:error, :daily_limit_reached}
+          | {:error, {:invalid, atom(), String.t()}}
   def queue_verification_code(phone_number, client, opts \\ []) do
-    with {:ok, phone} <- validate_phone(phone_number),
-         :ok <- check_capacity(),
-         {:ok, reservation} <- RateLimiter.reserve(phone, nil) do
-      code = CodeGenerator.generate()
-      :ok = store_code(phone, code)
+    key = opts[:idempotency_key]
 
+    # A malformed key is rejected by Messages.enqueue/3
+    with nil <- if(is_binary(key), do: Messages.get_by_idempotency_key(client, key)),
+         {:ok, phone} <- validate_phone(phone_number),
+         code = CodeGenerator.generate(),
+         body = render_message(code),
+         :ok <- check_capacity(Segments.count(body)),
+         {:ok, reservation} <- RateLimiter.reserve(phone, nil) do
       attrs = %{
         to: phone,
-        body: render_message(code),
+        body: body,
         reference: opts[:reference],
         callback_url: opts[:callback_url]
       }
 
-      case Messages.enqueue(client, attrs, kind: "otp", ttl_seconds: code_ttl_seconds()) do
+      enqueue_opts = [kind: "otp", ttl_seconds: code_ttl_seconds(), idempotency_key: key]
+
+      # Queue first, then store the code: if a racing duplicate request won,
+      # the code its SMS carries must stay the valid one.
+      case Messages.enqueue(client, attrs, enqueue_opts) do
         {:ok, message} ->
+          :ok = store_code(client, phone, code)
           Outbox.kick()
           {:ok, message}
 
+        {:existing, message} ->
+          RateLimiter.release(reservation)
+          {:existing, message}
+
         {:error, field, reason} ->
           RateLimiter.release(reservation)
-          CodeStore.delete(phone)
           {:error, {:invalid, field, reason}}
       end
+    else
+      %Messages.Message{} = existing -> {:existing, existing}
+      error -> error
     end
   end
 
-  @doc "Verify a code submitted by the user."
-  @spec verify_code(String.t(), String.t()) ::
+  @doc """
+  Verify a code submitted by the user. Only codes requested by the same
+  `client` match (default: the public demo API).
+  """
+  @spec verify_code(String.t(), String.t(), String.t()) ::
           :ok
           | {:error, :invalid_code}
           | {:error, :too_many_attempts}
           | {:error, :expired_or_missing}
           | {:error, :cache_error}
-  def verify_code(phone_number, code) when is_binary(code) do
+  def verify_code(phone_number, code, client \\ @public_client)
+
+  def verify_code(phone_number, code, client) when is_binary(code) do
     case validate_phone(phone_number) do
-      {:ok, phone} -> CodeStore.verify(phone, code)
+      {:ok, phone} -> CodeStore.verify(client, phone, code)
       {:error, :invalid_phone} -> {:error, :expired_or_missing}
     end
   end
 
-  def verify_code(_phone_number, _code), do: {:error, :invalid_code}
+  def verify_code(_phone_number, _code, _client), do: {:error, :invalid_code}
 
   @doc "Seconds a freshly sent code stays valid."
   @spec code_ttl_seconds() :: pos_integer()
@@ -131,9 +171,9 @@ defmodule Backend.SmsGateway do
   def modem_status, do: Modem.status()
 
   @doc "Whether a pending (unverified) code exists for this phone."
-  def has_pending_code?(phone_number) do
+  def has_pending_code?(phone_number, client \\ @public_client) do
     case validate_phone(phone_number) do
-      {:ok, phone} -> CodeStore.has_pending?(phone)
+      {:ok, phone} -> CodeStore.has_pending?(client, phone)
       _ -> false
     end
   end
@@ -174,10 +214,10 @@ defmodule Backend.SmsGateway do
     end
   end
 
-  defp store_code(phone, code), do: CodeStore.put(phone, code, code_ttl_seconds())
+  defp store_code(client, phone, code), do: CodeStore.put(client, phone, code, code_ttl_seconds())
 
-  defp check_capacity do
-    if Outbox.capacity_available?(), do: :ok, else: {:error, :daily_limit_reached}
+  defp check_capacity(segments) do
+    if Outbox.capacity_available?(segments), do: :ok, else: {:error, :daily_limit_reached}
   end
 
   defp render_message(code) do
@@ -198,7 +238,7 @@ defmodule Backend.SmsGateway do
 
       error ->
         # Never leave a code behind that the user did not receive
-        CodeStore.delete(phone)
+        CodeStore.delete(@public_client, phone)
         error
     end
   end

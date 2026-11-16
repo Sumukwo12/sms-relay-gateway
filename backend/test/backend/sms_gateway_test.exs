@@ -1,9 +1,9 @@
 defmodule Backend.SmsGatewayTest do
-  use ExUnit.Case, async: false
+  use Backend.DataCase, async: false
 
   import Backend.SmsHelpers
 
-  alias Backend.{CodeStore, SmsGateway}
+  alias Backend.SmsGateway
   alias Backend.Modem.Mock
 
   @phone "+254712345678"
@@ -15,7 +15,7 @@ defmodule Backend.SmsGatewayTest do
       assert {:ok, :sent} = SmsGateway.send_verification_code(@phone)
 
       assert sent_code(@phone) =~ ~r/^\d{6}$/
-      assert CodeStore.has_pending?(@phone)
+      assert SmsGateway.has_pending_code?(@phone)
     end
 
     test "normalises spaces, dashes and parentheses" do
@@ -96,7 +96,7 @@ defmodule Backend.SmsGatewayTest do
       Mock.set_status(:disconnected)
 
       assert {:error, :modem_disconnected} = SmsGateway.send_verification_code(@phone)
-      refute CodeStore.has_pending?(@phone)
+      refute SmsGateway.has_pending_code?(@phone)
       assert {:ok, %{remaining: 3}} = SmsGateway.rate_limit_info(@phone)
     end
 
@@ -106,7 +106,7 @@ defmodule Backend.SmsGatewayTest do
       assert {:error, :modem_error, {:cms_error, "500"}} =
                SmsGateway.send_verification_code(@phone)
 
-      refute CodeStore.has_pending?(@phone)
+      refute SmsGateway.has_pending_code?(@phone)
     end
   end
 

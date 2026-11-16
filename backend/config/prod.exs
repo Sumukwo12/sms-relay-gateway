@@ -15,6 +15,10 @@ config :backend, BackendWeb.Endpoint,
 # Production sends real SMS through the USB GSM modem
 config :backend, modem_adapter: Backend.Modem.UART
 
+# The unauthenticated demo /api endpoints are off in production unless
+# PUBLIC_API=true; integrated systems use the authenticated /v1 API.
+config :backend, public_api_enabled: false
+
 # Do not print debug messages in production
 config :logger, level: :info
 

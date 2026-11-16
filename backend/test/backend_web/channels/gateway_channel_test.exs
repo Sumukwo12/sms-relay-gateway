@@ -206,8 +206,9 @@ defmodule BackendWeb.GatewayChannelTest do
       {:ok, _, socket} =
         connect_phone_socket() |> subscribe_and_join(GatewayChannel, "gateway:phone")
 
-      push(socket, "sms_delivered", %{"id" => message.id})
-      _ = :sys.get_state(socket.channel_pid)
+      ref = push(socket, "sms_delivered", %{"id" => message.id})
+      # The ack lets the app drop the report from its retry buffer
+      assert_reply ref, :ok
 
       assert %{status: "delivered"} = Backend.Messages.get(message.id)
     end

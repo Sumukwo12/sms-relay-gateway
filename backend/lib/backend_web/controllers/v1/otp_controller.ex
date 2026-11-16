@@ -4,16 +4,20 @@ defmodule BackendWeb.V1.OtpController do
 
     POST /v1/otp/send    — {phone, reference?, callback_url?}; the gateway
                            generates the code and queues the SMS
-    POST /v1/otp/verify  — {phone, code}
+    POST /v1/otp/verify  — {phone, code}; only codes this system requested match
   """
 
   use BackendWeb, :controller
 
   alias Backend.{Messages, SmsGateway}
-  alias BackendWeb.V1.Errors
+  alias BackendWeb.V1.{Errors, Idempotency}
 
   def send_code(conn, %{"phone" => phone} = params) when is_binary(phone) do
-    opts = [reference: params["reference"], callback_url: params["callback_url"]]
+    opts = [
+      reference: params["reference"],
+      callback_url: params["callback_url"],
+      idempotency_key: Idempotency.key(conn, params)
+    ]
 
     case SmsGateway.queue_verification_code(phone, conn.assigns.api_client, opts) do
       {:ok, message} ->
@@ -24,6 +28,10 @@ defmodule BackendWeb.V1.OtpController do
           message: Messages.to_public(message),
           expires_in_seconds: SmsGateway.code_ttl_seconds()
         })
+
+      {:existing, message} ->
+        remaining = max(DateTime.diff(message.expires_at, DateTime.utc_now()), 0)
+        Idempotency.replay(conn, message, %{expires_in_seconds: remaining})
 
       {:error, :invalid_phone} ->
         Errors.invalid(conn, :phone, "must be an E.164 phone number, e.g. +254712345678")
@@ -51,7 +59,7 @@ defmodule BackendWeb.V1.OtpController do
 
   def verify(conn, %{"phone" => phone, "code" => code})
       when is_binary(phone) and is_binary(code) do
-    case SmsGateway.verify_code(phone, code) do
+    case SmsGateway.verify_code(phone, code, conn.assigns.api_client) do
       :ok ->
         json(conn, %{success: true, verified: true})
 

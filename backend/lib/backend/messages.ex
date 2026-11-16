@@ -11,12 +11,13 @@ defmodule Backend.Messages do
   import Ecto.Query
   require Logger
 
-  alias Backend.{PhoneUtils, Repo, Webhooks}
+  alias Backend.{PhoneUtils, Repo, Segments, Webhooks}
   alias Backend.Messages.Message
 
   # Matches the SMS Relay app's own body limit (3 concatenated SMS parts).
   @max_body_length 480
   @max_reference_length 100
+  @max_idempotency_key_length 100
 
   # ── Enqueue / read ──────────────────────────────────────────────────────────
 
@@ -24,18 +25,22 @@ defmodule Backend.Messages do
   Validate and queue a message for `client`.
 
   Attrs (string or atom keys): `to`, `body`, and optionally `reference`,
-  `callback_url`. Options: `:kind` (`"notification"` | `"otp"`) and
-  `:ttl_seconds` (how long it may wait in the queue).
+  `callback_url`. Options: `:kind` (`"notification"` | `"otp"`),
+  `:ttl_seconds` (how long it may wait in the queue) and `:idempotency_key`.
 
-  Returns `{:ok, message}` or `{:error, field, reason}`.
+  Returns `{:ok, message}`, `{:existing, message}` when `client` already
+  queued a message with the same idempotency key (nothing new is queued), or
+  `{:error, field, reason}`.
   """
   @spec enqueue(String.t(), map(), keyword()) ::
-          {:ok, Message.t()} | {:error, atom(), String.t()}
+          {:ok, Message.t()} | {:existing, Message.t()} | {:error, atom(), String.t()}
   def enqueue(client, attrs, opts \\ []) when is_binary(client) do
     now = now()
     ttl = Keyword.get(opts, :ttl_seconds, Application.get_env(:backend, :message_ttl_seconds))
 
-    with {:ok, to} <- validate_to(get(attrs, :to)),
+    with {:ok, key} <- validate_idempotency_key(opts[:idempotency_key]),
+         nil <- key && get_by_idempotency_key(client, key),
+         {:ok, to} <- validate_to(get(attrs, :to)),
          {:ok, body} <- validate_body(get(attrs, :body)),
          {:ok, reference} <- validate_reference(get(attrs, :reference)),
          {:ok, callback_url} <- validate_callback_url(get(attrs, :callback_url)) do
@@ -45,23 +50,71 @@ defmodule Backend.Messages do
         kind: Keyword.get(opts, :kind, "notification"),
         to: to,
         body: body,
+        segments: Segments.count(body),
         status: "queued",
         attempts: 0,
         max_attempts: Application.get_env(:backend, :message_max_attempts, 3),
         reference: reference,
         callback_url: callback_url,
+        idempotency_key: key,
         next_attempt_at: now,
         expires_at: DateTime.add(now, ttl, :second)
       }
 
-      message = Repo.insert!(message)
-
-      Logger.info(
-        "[Messages] Queued #{message.kind} #{message.id} for #{PhoneUtils.mask(to)} (client=#{client})"
-      )
-
-      {:ok, message}
+      insert_new(message)
+    else
+      %Message{} = existing -> {:existing, existing}
+      error -> error
     end
+  end
+
+  # Two requests racing with the same idempotency key: the unique index lets
+  # one insert win and the other gets its message back.
+  defp insert_new(message) do
+    message = Repo.insert!(message)
+
+    Logger.info(
+      "[Messages] Queued #{message.kind} #{message.id} for #{PhoneUtils.mask(message.to)} (client=#{message.client})"
+    )
+
+    {:ok, message}
+  rescue
+    error in Ecto.ConstraintError ->
+      case message.idempotency_key &&
+             get_by_idempotency_key(message.client, message.idempotency_key) do
+        %Message{} = existing -> {:existing, existing}
+        _ -> reraise error, __STACKTRACE__
+      end
+  end
+
+  @doc """
+  Record an SMS that was sent directly through the modem (the public demo
+  API) so it counts toward the daily cap. Its body is not kept.
+  """
+  @spec record_direct_send(String.t(), String.t(), String.t(), String.t()) :: Message.t()
+  def record_direct_send(client, kind, to, body) do
+    now = now()
+
+    Repo.insert!(%Message{
+      id: generate_id(),
+      client: client,
+      kind: kind,
+      to: to,
+      body: "[redacted]",
+      segments: Segments.count(body),
+      status: "sent",
+      attempts: 1,
+      max_attempts: 1,
+      next_attempt_at: now,
+      expires_at: now,
+      sent_at: now
+    })
+  end
+
+  @doc "The message `client` queued with this idempotency key, if any."
+  @spec get_by_idempotency_key(String.t(), String.t()) :: Message.t() | nil
+  def get_by_idempotency_key(client, key) when is_binary(key) do
+    Repo.one(from(m in Message, where: m.client == ^client and m.idempotency_key == ^key))
   end
 
   @doc "Fetch a message, scoped to the client that created it."
@@ -79,11 +132,29 @@ defmodule Backend.Messages do
     Repo.aggregate(from(m in Message, where: m.status in ["queued", "sending"]), :count)
   end
 
-  @doc "Messages that left the phone in the last 24 hours (for the daily cap)."
+  @doc "SMS parts waiting to be sent (for the daily cap)."
+  @spec queued_segments() :: non_neg_integer()
+  def queued_segments do
+    Repo.aggregate(from(m in Message, where: m.status in ["queued", "sending"]), :sum, :segments) ||
+      0
+  end
+
+  @doc """
+  SMS parts that left the phone in the last 24 hours (for the daily cap).
+  A long message counts once per part, as the SMS bundle charges it.
+  """
   @spec sent_last_24h() :: non_neg_integer()
   def sent_last_24h do
     since = DateTime.add(now(), -86_400, :second)
-    Repo.aggregate(from(m in Message, where: m.sent_at > ^since), :count)
+    Repo.aggregate(from(m in Message, where: m.sent_at > ^since), :sum, :segments) || 0
+  end
+
+  @doc "When the oldest message still waiting to be sent was queued, or nil."
+  @spec oldest_queued_at() :: DateTime.t() | nil
+  def oldest_queued_at do
+    Repo.one(
+      from(m in Message, where: m.status in ["queued", "sending"], select: min(m.inserted_at))
+    )
   end
 
   @doc "JSON-friendly view of a message. Never includes the body."
@@ -97,6 +168,7 @@ defmodule Backend.Messages do
       attempts: m.attempts,
       error: m.last_error,
       reference: m.reference,
+      segments: m.segments,
       created_at: m.inserted_at,
       sent_at: m.sent_at,
       delivered_at: m.delivered_at,
@@ -152,7 +224,7 @@ defmodule Backend.Messages do
   def mark_sent(id) when is_binary(id) do
     transition(id, ~w(queued sending failed), fn m ->
       [status: "sent", sent_at: now(), last_error: nil, failed_at: nil]
-      |> redact_otp(m)
+      |> redact_body(m)
     end)
   end
 
@@ -160,7 +232,7 @@ defmodule Backend.Messages do
   def mark_delivered(id) when is_binary(id) do
     transition(id, ~w(queued sending sent failed), fn m ->
       [status: "delivered", delivered_at: now(), sent_at: m.sent_at || now(), last_error: nil]
-      |> redact_otp(m)
+      |> redact_body(m)
     end)
   end
 
@@ -208,7 +280,7 @@ defmodule Backend.Messages do
     Logger.warning("[Messages] Message #{id} failed: #{error}")
 
     transition(id, ~w(queued sending), fn m ->
-      [status: "failed", failed_at: now(), last_error: error] |> redact_otp(m)
+      [status: "failed", failed_at: now(), last_error: error] |> redact_body(m)
     end)
   end
 
@@ -244,6 +316,21 @@ defmodule Backend.Messages do
     count
   end
 
+  @doc """
+  Delete finished messages (sent, delivered or failed) created before
+  `cutoff`. Returns how many were removed.
+  """
+  @spec purge_finished_before(DateTime.t()) :: non_neg_integer()
+  def purge_finished_before(%DateTime{} = cutoff) do
+    {count, _} =
+      from(m in Message,
+        where: m.status in ["sent", "delivered", "failed"] and m.inserted_at < ^cutoff
+      )
+      |> Repo.delete_all()
+
+    count
+  end
+
   # ── Helpers ─────────────────────────────────────────────────────────────────
 
   # Applies `changes_fun` only while the message is in one of `from_statuses`,
@@ -276,9 +363,9 @@ defmodule Backend.Messages do
     end
   end
 
-  # OTP codes are secrets: once an OTP message is done, drop its body.
-  defp redact_otp(changes, %Message{kind: "otp"}), do: Keyword.put(changes, :body, "[redacted]")
-  defp redact_otp(changes, _message), do: changes
+  # Bodies are only needed to send: once a message is done, drop its body
+  # (OTP codes are secrets, notifications may hold personal data).
+  defp redact_body(changes, _message), do: Keyword.put(changes, :body, "[redacted]")
 
   # 15s, 30s, 60s, ... capped at 5 minutes
   defp backoff_seconds(attempts), do: min(15 * Integer.pow(2, max(attempts - 1, 0)), 300)
@@ -303,6 +390,10 @@ defmodule Backend.Messages do
       String.length(body) > @max_body_length ->
         {:error, :body, "must be at most #{@max_body_length} characters"}
 
+      Segments.count(body) > max_segments() ->
+        {:error, :body,
+         "must fit in #{max_segments()} SMS parts (#{max_segments() * 67} characters when it contains emoji or non-Latin text)"}
+
       true ->
         {:ok, body}
     end
@@ -317,6 +408,19 @@ defmodule Backend.Messages do
 
   defp validate_reference(_),
     do: {:error, :reference, "must be a string of at most #{@max_reference_length} characters"}
+
+  defp validate_idempotency_key(nil), do: {:ok, nil}
+
+  defp validate_idempotency_key(key)
+       when is_binary(key) and key != "" and byte_size(key) <= @max_idempotency_key_length,
+       do: {:ok, key}
+
+  defp validate_idempotency_key(_),
+    do:
+      {:error, :idempotency_key,
+       "must be a non-empty string of at most #{@max_idempotency_key_length} characters"}
+
+  defp max_segments, do: Application.get_env(:backend, :message_max_segments, 4)
 
   defp validate_callback_url(nil), do: {:ok, nil}
 

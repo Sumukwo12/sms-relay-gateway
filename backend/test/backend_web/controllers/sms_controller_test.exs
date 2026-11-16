@@ -17,6 +17,20 @@ defmodule BackendWeb.SmsControllerTest do
       assert sent_code(@phone)
     end
 
+    test "counts toward the daily SMS cap", %{conn: conn} do
+      original = Application.get_env(:backend, :daily_send_limit)
+      Application.put_env(:backend, :daily_send_limit, 1)
+      on_exit(fn -> Application.put_env(:backend, :daily_send_limit, original) end)
+
+      assert conn |> post(~p"/api/send-code", %{phone: @phone}) |> json_response(200)
+      assert Backend.Messages.sent_last_24h() == 1
+
+      assert %{"error" => "daily_limit_reached"} =
+               build_conn()
+               |> post(~p"/api/send-code", %{phone: "+254700000001"})
+               |> json_response(429)
+    end
+
     test "422 for an invalid number", %{conn: conn} do
       conn = post(conn, ~p"/api/send-code", %{phone: "0712"})
       assert %{"error" => "invalid_phone"} = json_response(conn, 422)

@@ -129,6 +129,54 @@ defmodule Backend.MessagesTest do
     end
   end
 
+  describe "SMS parts and idempotency" do
+    test "records how many SMS parts the body needs" do
+      assert enqueue!(%{body: String.duplicate("a", 161)}).segments == 2
+      assert enqueue!(%{body: "Habari 👋"}).segments == 1
+    end
+
+    test "rejects bodies longer than the configured number of parts" do
+      # 300 non-Latin characters are 5 UCS-2 parts, over the default 4
+      assert {:error, :body, reason} =
+               Messages.enqueue("c", %{to: @phone, body: String.duplicate("ж", 300)})
+
+      assert reason =~ "4 SMS parts"
+    end
+
+    test "the daily count is in SMS parts" do
+      message = enqueue!(%{body: String.duplicate("a", 200)})
+      Messages.checkout_next()
+      Messages.mark_sent(message.id)
+
+      assert Messages.sent_last_24h() == 2
+    end
+
+    test "notification bodies are erased once sent too" do
+      message = enqueue!()
+      Messages.checkout_next()
+
+      assert {:ok, %Message{body: "[redacted]"}} = Messages.mark_sent(message.id)
+    end
+
+    test "the same idempotency key returns the original message" do
+      first = enqueue!(%{}, idempotency_key: "order-7-shipped")
+
+      assert {:existing, %Message{id: id}} =
+               Messages.enqueue("test_system", %{to: @phone, body: "Hello"},
+                 idempotency_key: "order-7-shipped"
+               )
+
+      assert id == first.id
+      assert Messages.queue_depth() == 1
+
+      # Keys are per system
+      assert {:ok, _} =
+               Messages.enqueue("other_system", %{to: @phone, body: "Hello"},
+                 idempotency_key: "order-7-shipped"
+               )
+    end
+  end
+
   test "expire_stale/0 fails messages whose time in the queue ran out" do
     expired = enqueue!(%{}, ttl_seconds: -1)
     fresh = enqueue!()
