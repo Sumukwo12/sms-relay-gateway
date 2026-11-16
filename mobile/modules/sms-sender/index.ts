@@ -67,6 +67,14 @@ export async function sendSms(
   return await SmsSenderNative.sendSms(to, body, subId ?? null, id ?? null);
 }
 
+/**
+ * Remember (natively, so the boot receiver can read it) whether the relay
+ * should start again after the phone reboots.
+ */
+export function setAutoStart(enabled: boolean): void {
+  SmsSenderNative?.setAutoStart?.(enabled);
+}
+
 export function addDeliveryListener(listener: (event: DeliveredEvent) => void): EventSubscription | null {
   if (!emitter || typeof emitter.addListener !== 'function') {
     return null;
@@ -79,4 +87,5 @@ export default {
   getDeviceInfo,
   sendSms,
   addDeliveryListener,
+  setAutoStart,
 };

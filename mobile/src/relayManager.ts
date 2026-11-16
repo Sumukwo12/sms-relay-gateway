@@ -5,6 +5,7 @@ import {
   sendSms,
   addDeliveryListener,
   getDeviceInfo,
+  setAutoStart,
   DeliveredEvent,
 } from 'sms-sender';
 import {
@@ -16,56 +17,25 @@ import {
 } from './types';
 import {
   addLogEntry,
+  addPendingDeliveryId,
   calculateStats,
   getLogs,
+  getPendingDeliveries,
+  isServiceEnabled,
   loadSettings,
   maskPhoneNumber,
+  removePendingDeliveryId,
   saveSettings,
+  setServiceEnabled,
   updateLogDelivery,
 } from './storage';
+import { isValidE164, resultsFromLogs, SmsOutcome } from './relayLogic';
 import {
   stopForegroundService,
   updateForegroundNotification,
 } from './foregroundService';
 
-export function isPrivateNetworkUrl(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr);
-    const host = parsed.hostname.toLowerCase();
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '::1' ||
-      host.endsWith('.local')
-    ) {
-      return true;
-    }
-    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
-    const m172 = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
-    if (m172) {
-      const second = parseInt(m172[1], 10);
-      if (second >= 16 && second <= 31) return true;
-    }
-    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-export function getUrlSecurityWarning(urlStr: string): string | null {
-  if (!urlStr) return null;
-  const lower = urlStr.trim().toLowerCase();
-  if (lower.startsWith('ws://') && !isPrivateNetworkUrl(urlStr)) {
-    return 'Security Warning: Unencrypted ws:// on a public host. Use wss:// for production to prevent interception.';
-  }
-  return null;
-}
-
-export function isValidE164(phone: string): boolean {
-  const cleaned = phone.replace(/[\s\-().]/g, '');
-  return /^\+[1-9]\d{7,14}$/.test(cleaned);
-}
+export { getUrlSecurityWarning, isPrivateNetworkUrl, isValidE164 } from './relayLogic';
 
 class RelayManager {
   private socket: Socket | null = null;
@@ -84,7 +54,10 @@ class RelayManager {
   private handledMessageIds = new Set<string>();
   // Final result per handled id, so a server retry of an id we already sent
   // gets the result again instead of a second SMS.
-  private resultsById = new Map<string, { status: 'sent' | 'failed'; error: string | null }>();
+  // Rebuilt from the log on startup, so this survives app restarts.
+  private resultsById = new Map<string, SmsOutcome>();
+  // Delivery reports pushed but not yet acknowledged by the server
+  private deliveriesInFlight = new Set<string>();
   private isServiceRunning = false;
   private netInfoUnsubscribe: (() => void) | null = null;
   private deliverySubscription: any = null;
@@ -132,9 +105,23 @@ class RelayManager {
     this.logs = await getLogs();
     this.stats = calculateStats(this.logs);
 
-    // Populate handled ids from existing logs to prevent reprocessing
+    // Populate handled ids and their results from existing logs, so a server
+    // retry after an app restart gets the earlier result instead of hanging
     this.logs.forEach((log) => this.handledMessageIds.add(log.id));
+    for (const [id, result] of resultsFromLogs(this.logs)) {
+      if (!this.resultsById.has(id)) this.resultsById.set(id, result);
+    }
     this.notify();
+  }
+
+  /**
+   * Start the relay if it was running before the app was closed or the phone
+   * rebooted. Called on app launch and from the boot task.
+   */
+  public async resumeIfEnabled(): Promise<void> {
+    if (this.isServiceRunning || !(await isServiceEnabled())) return;
+    if (!this.settings.serverUrl || !this.settings.token) return;
+    await this.startService();
   }
 
   public async updateSettings(newSettings: RelaySettings): Promise<void> {
@@ -150,6 +137,8 @@ class RelayManager {
 
   public async startService(): Promise<void> {
     this.isServiceRunning = true;
+    await setServiceEnabled(true);
+    setAutoStart(true);
     await this.disconnect();
     this.setStatus('connecting');
     await updateForegroundNotification('Connecting to backend…');
@@ -167,6 +156,8 @@ class RelayManager {
 
   public async stopService(): Promise<void> {
     this.isServiceRunning = false;
+    await setServiceEnabled(false);
+    setAutoStart(false);
     this.clearTelemetryInterval();
     if (this.netInfoUnsubscribe) {
       this.netInfoUnsubscribe();
@@ -234,6 +225,7 @@ class RelayManager {
         this.updateNotificationText(`Connected · ${this.stats.sentToday} sent today`);
         this.sendDeviceTelemetry();
         this.startTelemetryInterval();
+        this.flushPendingDeliveries();
       })
       .receive('error', (resp: any) => {
         console.warn('[RelayManager] Channel join error:', resp);
@@ -384,10 +376,9 @@ class RelayManager {
     this.deliverySubscription = addDeliveryListener((event: DeliveredEvent) => {
       if (!event?.id) return;
 
-      // Report delivery confirmation to server
-      if (this.channel && this.status === 'connected') {
-        this.channel.push('sms_delivered', { id: event.id });
-      }
+      // Buffer the report until the server acknowledges it, so reports that
+      // arrive while offline are sent after reconnecting
+      addPendingDeliveryId(event.id).then(() => this.flushPendingDeliveries());
 
       // Update local storage log entry
       updateLogDelivery(event.id).then((updatedLogs) => {
@@ -396,6 +387,25 @@ class RelayManager {
         this.notify();
       });
     });
+  }
+
+  private async flushPendingDeliveries() {
+    const pending = await getPendingDeliveries();
+
+    for (const id of pending) {
+      if (!this.channel || this.status !== 'connected') return;
+      if (this.deliveriesInFlight.has(id)) continue;
+
+      this.deliveriesInFlight.add(id);
+      this.channel
+        .push('sms_delivered', { id })
+        .receive('ok', () => {
+          this.deliveriesInFlight.delete(id);
+          removePendingDeliveryId(id);
+        })
+        .receive('error', () => this.deliveriesInFlight.delete(id))
+        .receive('timeout', () => this.deliveriesInFlight.delete(id));
+    }
   }
 
   private setupNetworkMonitor() {

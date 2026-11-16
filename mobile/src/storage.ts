@@ -1,11 +1,14 @@
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LogEntry, RelaySettings, RelayStats } from './types';
+import { addPendingDelivery } from './relayLogic';
 
 const SECURE_KEY_URL = 'sms_relay_server_url';
 const SECURE_KEY_TOKEN = 'sms_relay_auth_token';
 const ASYNC_KEY_SUB_ID = '@sms_relay_sub_id';
 const ASYNC_KEY_LOGS = '@sms_relay_message_logs_v1';
+const ASYNC_KEY_PENDING_DELIVERIES = '@sms_relay_pending_deliveries_v1';
+const ASYNC_KEY_SERVICE_ENABLED = '@sms_relay_service_enabled';
 const MAX_LOG_ENTRIES = 200;
 
 export async function saveSettings(settings: RelaySettings): Promise<void> {
@@ -75,6 +78,61 @@ export async function updateLogDelivery(id: string): Promise<LogEntry[]> {
     console.error('[Storage] Error updating log delivery:', err);
     return [];
   }
+}
+
+// ── Delivery reports not yet acknowledged by the server ────────────────────
+
+// Reports can arrive together; run the read-modify-write updates one at a
+// time so none is lost.
+let pendingWrites: Promise<void> = Promise.resolve();
+function serializePendingWrite(fn: () => Promise<void>): Promise<void> {
+  pendingWrites = pendingWrites.then(fn, fn);
+  return pendingWrites;
+}
+
+export async function getPendingDeliveries(): Promise<string[]> {
+  try {
+    const raw = await AsyncStorage.getItem(ASYNC_KEY_PENDING_DELIVERIES);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.error('[Storage] Error loading pending deliveries:', err);
+    return [];
+  }
+}
+
+export function addPendingDeliveryId(id: string): Promise<void> {
+  return serializePendingWrite(async () => {
+    try {
+      const updated = addPendingDelivery(await getPendingDeliveries(), id);
+      await AsyncStorage.setItem(ASYNC_KEY_PENDING_DELIVERIES, JSON.stringify(updated));
+    } catch (err) {
+      console.error('[Storage] Error saving pending delivery:', err);
+    }
+  });
+}
+
+export function removePendingDeliveryId(id: string): Promise<void> {
+  return serializePendingWrite(async () => {
+    try {
+      const current = await getPendingDeliveries();
+      const updated = current.filter((pendingId) => pendingId !== id);
+      if (updated.length !== current.length) {
+        await AsyncStorage.setItem(ASYNC_KEY_PENDING_DELIVERIES, JSON.stringify(updated));
+      }
+    } catch (err) {
+      console.error('[Storage] Error removing pending delivery:', err);
+    }
+  });
+}
+
+// ── Whether the relay should run (restored on app launch and after boot) ────
+
+export async function setServiceEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(ASYNC_KEY_SERVICE_ENABLED, enabled ? '1' : '0');
+}
+
+export async function isServiceEnabled(): Promise<boolean> {
+  return (await AsyncStorage.getItem(ASYNC_KEY_SERVICE_ENABLED)) === '1';
 }
 
 export async function clearLogs(): Promise<void> {
