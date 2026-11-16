@@ -32,12 +32,8 @@ defmodule BackendWeb.Router do
     # SMS verification
     post "/send-code", SmsController, :send_code
     post "/verify-code", SmsController, :verify_code
-  end
 
-  scope "/api", BackendWeb do
-    pipe_through :api
-
-    # Modem health
+    # Modem health (monitoring belongs on the authenticated GET /v1/status)
     get "/modem/status", SmsController, :modem_status
 
     # Rate limit info

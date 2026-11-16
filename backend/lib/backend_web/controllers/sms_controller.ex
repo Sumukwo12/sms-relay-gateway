@@ -46,6 +46,14 @@ defmodule BackendWeb.SmsController do
           %{retry_after_seconds: retry_after}
         )
 
+      {:error, :daily_limit_reached} ->
+        error(
+          conn,
+          :too_many_requests,
+          "daily_limit_reached",
+          "The daily SMS limit has been reached. Try again later."
+        )
+
       {:error, :modem_disconnected} ->
         error(
           conn,

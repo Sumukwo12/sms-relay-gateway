@@ -142,6 +142,81 @@ defmodule BackendWeb.V1.ApiTest do
            } = body
   end
 
+  describe "idempotency" do
+    test "a retried POST /v1/messages returns the original message", %{conn: conn} do
+      request = fn ->
+        build_conn()
+        |> authed()
+        |> put_req_header("idempotency-key", "order-9-shipped")
+        |> post(~p"/v1/messages", %{to: @phone, body: "Shipped"})
+      end
+
+      first = request.() |> json_response(202)
+      replay = request.()
+
+      assert get_resp_header(replay, "idempotent-replayed") == ["true"]
+      assert json_response(replay, 200)["message"]["id"] == first["message"]["id"]
+      assert Messages.queue_depth() == 1
+      assert conn
+    end
+
+    test "a retried POST /v1/otp/send keeps the first code valid" do
+      request = fn ->
+        build_conn()
+        |> authed()
+        |> post(~p"/v1/otp/send", %{phone: @phone, idempotency_key: "signup-42"})
+      end
+
+      first = request.() |> json_response(202)
+      Outbox.drain()
+      code = sent_code(@phone)
+
+      replay = request.() |> json_response(200)
+      assert replay["message"]["id"] == first["message"]["id"]
+      assert length(Backend.Modem.Mock.outbox()) == 1
+
+      assert build_conn()
+             |> authed()
+             |> post(~p"/v1/otp/verify", %{phone: @phone, code: code})
+             |> json_response(200)
+    end
+  end
+
+  test "a code can only be verified by the system that requested it", %{conn: conn} do
+    conn |> authed() |> post(~p"/v1/otp/send", %{phone: @phone}) |> json_response(202)
+    Outbox.drain()
+    code = sent_code(@phone)
+
+    assert %{"error" => "expired_or_missing"} =
+             build_conn()
+             |> authed("other-api-key")
+             |> post(~p"/v1/otp/verify", %{phone: @phone, code: code})
+             |> json_response(422)
+
+    assert build_conn()
+           |> authed()
+           |> post(~p"/v1/otp/verify", %{phone: @phone, code: code})
+           |> json_response(200)
+  end
+
+  test "the daily cap counts SMS parts", %{conn: conn} do
+    original = Application.get_env(:backend, :daily_send_limit)
+    Application.put_env(:backend, :daily_send_limit, 2)
+    on_exit(fn -> Application.put_env(:backend, :daily_send_limit, original) end)
+
+    # 3 parts don't fit in a cap of 2
+    assert %{"error" => "daily_limit_reached"} =
+             conn
+             |> authed()
+             |> post(~p"/v1/messages", %{to: @phone, body: String.duplicate("a", 400)})
+             |> json_response(429)
+
+    assert build_conn()
+           |> authed()
+           |> post(~p"/v1/messages", %{to: @phone, body: String.duplicate("a", 200)})
+           |> json_response(202)
+  end
+
   test "webhooks are signed with the sender's API key", %{conn: conn} do
     test_pid = self()
 
@@ -158,6 +233,7 @@ defmodule BackendWeb.V1.ApiTest do
     |> json_response(202)
 
     Outbox.drain()
+    Webhooks.drain()
 
     assert_receive {:webhook, raw, signature}, 2_000
     assert %{"event" => "message.sent", "message" => %{"status" => "sent"}} = Jason.decode!(raw)
@@ -170,8 +246,9 @@ defmodule BackendWeb.V1.ApiTest do
       on_exit(fn -> Application.put_env(:backend, :public_api_enabled, true) end)
 
       assert conn |> post(~p"/api/send-code", %{phone: @phone}) |> json_response(404)
-      # Read-only status stays available
-      assert build_conn() |> get(~p"/api/modem/status") |> json_response(200)
+      # Monitoring moves to the authenticated GET /v1/status
+      assert build_conn() |> get(~p"/api/modem/status") |> json_response(404)
+      assert build_conn() |> get("/api/rate-limit/%2B254712345678") |> json_response(404)
     end
   end
 end

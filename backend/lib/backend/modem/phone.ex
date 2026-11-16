@@ -10,7 +10,8 @@ defmodule Backend.Modem.Phone do
 
   Implements `Backend.Modem`:
     - `send_sms/2`: Queues the message and waits for the phone's `sms_result`
-      acknowledgment (times out after 30s by default).
+      acknowledgment (times out after 40s by default, longer than the
+      app's own 30s timeout so its answer normally arrives first).
     - `status/0`: Returns `:ready` when a phone is actively connected,
       `:disconnected` otherwise. Answers instantly from state.
   """
@@ -25,7 +26,7 @@ defmodule Backend.Modem.Phone do
     :phone_ref,
     pending: %{},
     device_info: nil,
-    send_timeout_ms: 30_000
+    send_timeout_ms: 40_000
   ]
 
   # ── Public API ──────────────────────────────────────────────────────────────
@@ -255,6 +256,6 @@ defmodule Backend.Modem.Phone do
   end
 
   defp get_send_timeout_ms do
-    Application.get_env(:backend, :phone_send_timeout_ms, 30_000)
+    Application.get_env(:backend, :phone_send_timeout_ms, 40_000)
   end
 end

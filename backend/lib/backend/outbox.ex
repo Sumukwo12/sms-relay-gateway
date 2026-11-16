@@ -7,7 +7,7 @@ defmodule Backend.Outbox do
   reconnects, and every `:outbox_poll_ms` to pick up retries and expire
   messages that waited too long. While the phone is offline, messages stay
   queued and are not charged an attempt. Sending also pauses once
-  `:daily_send_limit` messages have gone out in the last 24 hours.
+  `:daily_send_limit` SMS parts have gone out in the last 24 hours.
   """
 
   use GenServer
@@ -37,13 +37,15 @@ defmodule Backend.Outbox do
   def daily_limit_reached?, do: Messages.sent_last_24h() >= daily_limit()
 
   @doc """
-  Whether another message can be accepted without overrunning the daily cap,
-  counting both what was sent in the last 24h and what is still queued.
+  Whether a message of `segments` SMS parts can be accepted without
+  overrunning the daily cap, counting both the parts sent in the last 24h and
+  the parts still queued.
   """
-  @spec capacity_available?() :: boolean()
-  def capacity_available?, do: Messages.sent_last_24h() + Messages.queue_depth() < daily_limit()
+  @spec capacity_available?(pos_integer()) :: boolean()
+  def capacity_available?(segments \\ 1),
+    do: Messages.sent_last_24h() + Messages.queued_segments() + segments <= daily_limit()
 
-  @doc "The configured rolling 24h send cap."
+  @doc "The configured rolling 24h send cap, in SMS parts."
   def daily_limit, do: Application.get_env(:backend, :daily_send_limit, 500)
 
   # ── GenServer ───────────────────────────────────────────────────────────────

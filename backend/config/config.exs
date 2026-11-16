@@ -85,7 +85,19 @@ config :backend,
 
   # How often (ms) the outbox looks for due or retryable messages.
   # nil disables the timer (tests drive the outbox explicitly).
-  outbox_poll_ms: 5_000
+  outbox_poll_ms: 5_000,
+  message_max_segments: 4,
+  message_retention_days: 30,
+  webhook_poll_ms: 5_000,
+  webhook_max_attempts: 12,
+  monitor_interval_ms: 60_000,
+  janitor_interval_ms: 3_600_000,
+  alert_webhook_url: nil,
+  alert_offline_seconds: 300,
+  alert_queue_age_seconds: 600,
+  alert_battery_percent: 20,
+  # Longer than the relay app's own 30s send timeout, so its answer arrives first
+  phone_send_timeout_ms: 40_000
 
 config :backend, Backend.Repo, journal_mode: :wal
 

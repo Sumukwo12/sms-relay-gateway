@@ -72,6 +72,13 @@ if config_env() != :test do
     daily_send_limit: env_int.("DAILY_SEND_LIMIT"),
     message_max_attempts: env_int.("MESSAGE_MAX_ATTEMPTS"),
     message_ttl_seconds: env_int.("MESSAGE_TTL_SECONDS"),
+    message_max_segments: env_int.("MESSAGE_MAX_SEGMENTS"),
+    message_retention_days: env_int.("MESSAGE_RETENTION_DAYS"),
+    webhook_max_attempts: env_int.("WEBHOOK_MAX_ATTEMPTS"),
+    alert_webhook_url: System.get_env("ALERT_WEBHOOK_URL"),
+    alert_offline_seconds: env_int.("ALERT_OFFLINE_SECONDS"),
+    alert_queue_age_seconds: env_int.("ALERT_QUEUE_AGE_SECONDS"),
+    alert_battery_percent: env_int.("ALERT_BATTERY_PERCENT"),
     public_api_enabled:
       if(System.get_env("PUBLIC_API"), do: System.get_env("PUBLIC_API") == "true", else: nil)
   ]
