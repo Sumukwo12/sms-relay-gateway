@@ -4,19 +4,22 @@
 #
 # Usually run through deploy/docker-compose.yml, which adds HTTPS (Caddy),
 # a persistent volume for the SQLite database and the environment.
-# Bump the versions below together; any Elixir >= 1.17 works.
-ARG ELIXIR_IMAGE=elixir:1.18-otp-27-slim
-ARG RUNNER_IMAGE=debian:bookworm-slim
+# Bump the versions below together (Elixir >= 1.19); the runner must use the
+# same Debian release as the Elixir image, or the release will not start.
+ARG ELIXIR_IMAGE=elixir:1.20-otp-29-slim
+ARG RUNNER_IMAGE=debian:trixie-slim
 
 FROM ${ELIXIR_IMAGE} AS builder
 
-# build-essential: exqlite (SQLite) and circuits_uart compile native code
+# build-essential: exqlite (SQLite) and circuits_uart compile native code;
+# ca-certificates: Hex downloads over HTTPS
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential git \
+  && apt-get install -y --no-install-recommends build-essential git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-ENV MIX_ENV=prod
+# Longer Hex timeout so deps.get survives slow connections
+ENV MIX_ENV=prod HEX_HTTP_TIMEOUT=120
 RUN mix local.hex --force && mix local.rebar --force
 
 COPY mix.exs mix.lock ./
