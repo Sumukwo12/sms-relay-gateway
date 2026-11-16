@@ -1,0 +1,5 @@
+# HTTPS for the gateway. Caddy proxies WebSockets (the relay phone) as-is.
+{$PHX_HOST} {
+	encode gzip
+	reverse_proxy backend:4000
+}
