@@ -6,9 +6,8 @@ defmodule Backend.SmsHelpers do
 
   alias Backend.Modem.Mock
 
-  @doc "Clear stored codes, rate limits and the mock modem's outbox."
+  @doc "Clear rate limits and the mock modem's outbox."
   def reset_sms_state(_context \\ %{}) do
-    Cachex.clear(:code_store)
     Cachex.clear(:rate_limit_store)
     Mock.reset()
     :ok
@@ -20,5 +19,17 @@ defmodule Backend.SmsHelpers do
       %{body: body} -> body |> then(&Regex.run(~r/\d{6}/, &1)) |> hd()
       nil -> nil
     end
+  end
+
+  @doc "Make a queued message due now (skips its retry backoff)."
+  def make_due(id) do
+    import Ecto.Query
+
+    Backend.Repo.update_all(
+      from(m in Backend.Messages.Message, where: m.id == ^id),
+      set: [next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second)]
+    )
+
+    :ok
   end
 end

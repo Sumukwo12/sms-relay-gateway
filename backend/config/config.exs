@@ -8,6 +8,7 @@
 import Config
 
 config :backend,
+  ecto_repos: [Backend.Repo],
   generators: [timestamp_type: :utc_datetime],
 
   # ── SMS Gateway Configuration ────────────────────────────────────────────
@@ -31,6 +32,9 @@ config :backend,
   android_sms_user: "",
   android_sms_pass: "",
 
+  # SMS Relay phone token (used when MODEM_ADAPTER=phone)
+  phone_gateway_token: nil,
+
   # How long (seconds) a generated code remains valid before expiring
   code_ttl_seconds: 300,
 
@@ -40,6 +44,15 @@ config :backend,
   # Max SMS sends allowed per phone number within a 1-hour rolling window
   rate_limit_per_hour: 3,
 
+  # Max SMS sends allowed per client IP within a 1-hour rolling window
+  rate_limit_per_ip_per_hour: 5,
+
+  # Max total SMS sends allowed globally across all clients within a 1-hour rolling window
+  rate_limit_global_per_hour: 100,
+
+  # Whether to trust X-Forwarded-For headers from reverse proxies for client IP
+  trust_proxy: false,
+
   # Wrong guesses allowed before a code is discarded
   max_verify_attempts: 5,
 
@@ -47,7 +60,46 @@ config :backend,
   sms_template: "Your verification code is: %{code}. It expires in 5 minutes. Do not share it.",
 
   # Browser origins allowed to call the JSON API (the Next.js frontend)
-  cors_origins: ["http://localhost:3000"]
+  cors_origins: ["http://localhost:3000"],
+
+  # ── Integration API (/v1) ────────────────────────────────────────────────
+  # One key per internal system, as %{"system_name" => "secret_key"}.
+  # Env: API_KEYS="billing:key1,crm:key2"
+  api_keys: %{},
+
+  # Whether the unauthenticated /api/send-code + /api/verify-code endpoints
+  # (used by the demo frontend) are enabled. Env: PUBLIC_API=true|false
+  public_api_enabled: true,
+
+  # Max SMS the outbox sends per rolling 24 hours, to protect the SIM bundle.
+  # Env: DAILY_SEND_LIMIT
+  daily_send_limit: 500,
+
+  # Delivery attempts per message before it is marked failed
+  message_max_attempts: 3,
+
+  # Seconds a queued notification may wait (e.g. phone offline) before it
+  # expires undelivered. OTP messages expire with their code instead.
+  # Env: MESSAGE_TTL_SECONDS
+  message_ttl_seconds: 86_400,
+
+  # How often (ms) the outbox looks for due or retryable messages.
+  # nil disables the timer (tests drive the outbox explicitly).
+  outbox_poll_ms: 5_000,
+  message_max_segments: 4,
+  message_retention_days: 30,
+  webhook_poll_ms: 5_000,
+  webhook_max_attempts: 12,
+  monitor_interval_ms: 60_000,
+  janitor_interval_ms: 3_600_000,
+  alert_webhook_url: nil,
+  alert_offline_seconds: 300,
+  alert_queue_age_seconds: 600,
+  alert_battery_percent: 20,
+  # Longer than the relay app's own 30s send timeout, so its answer arrives first
+  phone_send_timeout_ms: 40_000
+
+config :backend, Backend.Repo, journal_mode: :wal
 
 # Configure the endpoint
 config :backend, BackendWeb.Endpoint,
@@ -71,6 +123,9 @@ config :phoenix_live_view, :colocated_assets, disable_symlink_warning: true
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
+
+# Filter sensitive parameters from logs (including WebSocket connect params)
+config :phoenix, :filter_parameters, ["password", "token"]
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

@@ -1,0 +1,31 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.smssender'
+version = '1.0.0'
+
+expoModule {
+  // Local module, never published to a Maven repository.
+  canBePublished false
+}
+
+android {
+  namespace "expo.modules.smssender"
+  defaultConfig {
+    versionCode 1
+    versionName "1.0.0"
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  implementation "androidx.core:core-ktx:1.13.1"
+  // HeadlessJsTaskService for restarting the relay after boot; the version
+  // comes from the app's React Native Gradle plugin
+  implementation "com.facebook.react:react-android"
+}

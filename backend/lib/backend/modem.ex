@@ -12,6 +12,9 @@ defmodule Backend.Modem do
       Android SMS Gateway app (https://sms-gate.app/) over local Wi-Fi.
       Set `MODEM_ADAPTER=android` plus `ANDROID_SMS_URL`, `ANDROID_SMS_USER`,
       and `ANDROID_SMS_PASS` environment variables.
+    - `Backend.Modem.Phone` — sends SMS via an Android phone running our SMS Relay
+      app connected over a Phoenix Channel WebSocket (`gateway:phone`). Set
+      `MODEM_ADAPTER=phone` and `PHONE_GATEWAY_TOKEN`.
     - `Backend.Modem.Mock` — in-memory modem that logs messages instead of
       sending them. Default in dev and test.
 
@@ -24,6 +27,15 @@ defmodule Backend.Modem do
   @callback start_link(keyword()) :: GenServer.on_start()
   @callback send_sms(phone :: String.t(), message :: String.t()) :: :ok | {:error, term()}
   @callback status() :: status()
+
+  @doc """
+  Optional: send with options. `:id` is the outbox message id, which
+  adapters that report delivery (the SMS Relay phone) pass to the device so
+  its sent/delivered reports can be matched back to the message.
+  """
+  @callback send_sms(phone :: String.t(), message :: String.t(), opts :: keyword()) ::
+              :ok | {:error, term()}
+  @optional_callbacks send_sms: 3
 
   def child_spec(opts) do
     adapter = adapter()
@@ -42,9 +54,15 @@ defmodule Backend.Modem do
     %{id: __MODULE__, start: {adapter, :start_link, [opts]}}
   end
 
-  @doc "Send an SMS. Returns `:ok` or `{:error, reason}`."
-  @spec send_sms(String.t(), String.t()) :: :ok | {:error, term()}
-  def send_sms(phone, message), do: adapter().send_sms(phone, message)
+  @doc "Send an SMS. Returns `:ok` or `{:error, reason}`. See `c:send_sms/3` for `opts`."
+  @spec send_sms(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def send_sms(phone, message, opts \\ []) do
+    adapter = adapter()
+
+    if opts != [] and function_exported?(adapter, :send_sms, 3),
+      do: adapter.send_sms(phone, message, opts),
+      else: adapter.send_sms(phone, message)
+  end
 
   @doc "Current modem status — :ready | :busy | :disconnected"
   @spec status() :: status()

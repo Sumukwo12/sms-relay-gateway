@@ -24,11 +24,14 @@ defmodule Backend.Modem.Mock do
   end
 
   @impl Backend.Modem
-  def send_sms(phone, message) do
+  def send_sms(phone, message), do: send_sms(phone, message, [])
+
+  @impl Backend.Modem
+  def send_sms(phone, message, opts) do
     Agent.get_and_update(__MODULE__, fn
       %{status: :ready} = state ->
-        Logger.info("[Modem.Mock] SMS to #{phone}: #{message}")
-        entry = %{to: phone, body: message, sent_at: DateTime.utc_now()}
+        Logger.info("[Modem.Mock] SMS to #{Backend.PhoneUtils.mask(phone)}: #{message}")
+        entry = %{id: opts[:id], to: phone, body: message, sent_at: DateTime.utc_now()}
         {:ok, %{state | outbox: [entry | Enum.take(state.outbox, @outbox_limit - 1)]}}
 
       %{status: :disconnected} = state ->

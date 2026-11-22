@@ -5,7 +5,8 @@ defmodule Backend.MixProject do
     [
       app: :backend,
       version: "0.1.0",
-      elixir: "~> 1.17",
+      # config/runtime.exs uses the regex E modifier (Elixir 1.19+)
+      elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
@@ -55,7 +56,10 @@ defmodule Backend.MixProject do
       # CORS support for Next.js frontend
       {:cors_plug, "~> 3.0"},
       # HTTP client for Android SMS gateway adapter
-      {:req, "~> 0.5"}
+      {:req, "~> 0.5"},
+      # Persistent outbox (messages survive restarts while the phone is offline)
+      {:ecto_sql, "~> 3.12"},
+      {:ecto_sqlite3, "~> 0.19"}
     ] ++ modem_deps()
   end
 
@@ -77,8 +81,13 @@ defmodule Backend.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-      setup: ["deps.get"],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      setup: ["deps.get", "ecto.setup"],
+      "ecto.setup": ["ecto.create", "ecto.migrate"],
+      "ecto.reset": ["ecto.drop", "ecto.setup"],
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      # Do not run "deps.unlock --unused" because optional dependencies
+      # like :circuits_uart are only loaded in prod or when MODEM_ADAPTER=uart.
+      precommit: ["compile --warnings-as-errors", "format", "test"]
     ]
   end
 end
