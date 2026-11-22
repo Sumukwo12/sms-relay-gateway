@@ -59,11 +59,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Deploys main to the VPS once every check passes. Skipped until the
-  # VPS_HOST repository variable is set (see "Deploying" in README.md).
+  # Deploys main to the VPS once every check passes (see "Deploying" in
+  # README.md). Settings may be repository or `production` environment
+  # variables; the job fails with a clear message if one is missing.
   deploy:
     needs: [backend, backend-image, mobile, frontend]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.VPS_HOST != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -75,18 +76,41 @@ jobs:
       contents: read
       packages: read
     env:
-      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/sms-gateway' }}
       IMAGE: ${{ needs.backend-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+
+      # Variables or secrets, at repository or environment level
+      - name: Check deploy settings
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST || secrets.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER || secrets.VPS_USER }}
+          VPS_PORT: ${{ vars.VPS_PORT || secrets.VPS_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || secrets.DEPLOY_PATH || '/opt/sms-gateway' }}
+          HAS_KEY: ${{ secrets.VPS_SSH_KEY != '' }}
+          HAS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS != '' }}
+        run: |
+          missing=""
+          [ -n "$VPS_HOST" ] || missing="$missing VPS_HOST"
+          [ -n "$VPS_USER" ] || missing="$missing VPS_USER"
+          [ "$HAS_KEY" = true ] || missing="$missing VPS_SSH_KEY(secret)"
+          [ "$HAS_KNOWN_HOSTS" = true ] || missing="$missing VPS_KNOWN_HOSTS(secret)"
+          if [ -n "$missing" ]; then
+            echo "::error::Deploy settings missing:$missing (see Deploying in README.md)"
+            exit 1
+          fi
+          {
+            echo "VPS_HOST=$VPS_HOST"
+            echo "VPS_USER=$VPS_USER"
+            echo "VPS_PORT=$VPS_PORT"
+            echo "DEPLOY_PATH=$DEPLOY_PATH"
+          } >> "$GITHUB_ENV"
+          echo "Deploying $IMAGE to $VPS_USER@$VPS_HOST:$DEPLOY_PATH"
 
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-          VPS_HOST: ${{ vars.VPS_HOST }}
-          VPS_USER: ${{ vars.VPS_USER }}
-          VPS_PORT: ${{ vars.VPS_PORT || '22' }}
         run: |
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
