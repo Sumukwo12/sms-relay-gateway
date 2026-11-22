@@ -59,11 +59,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Lints the scripts that run on the VPS
+  deploy-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x deploy/*.sh
+
   # Deploys main to the VPS once every check passes (see "Deploying" in
   # README.md). Settings may be repository or `production` environment
   # variables; the job fails with a clear message if one is missing.
   deploy:
-    needs: [backend, backend-image, mobile, frontend]
+    needs: [backend, backend-image, deploy-scripts, mobile, frontend]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
