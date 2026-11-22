@@ -266,12 +266,16 @@ The body has `text` (Slack) and `content` (Discord) plus `alert`, `status`
 
 ## Deploying
 
-`deploy/` runs the backend as a Docker container behind an HTTPS reverse
-proxy, which the relay phone's `wss://` connection needs. The backend joins
-the Docker network named by `PROXY_NETWORK` as `sms-gateway`, so an existing
-proxy container on that network serves it with `reverse_proxy
-sms-gateway:4000`. On a server with no proxy, `COMPOSE_PROFILES=standalone`
-also runs the bundled Caddy on ports 80/443:
+`deploy/` runs the backend and the verification page as Docker containers
+behind an HTTPS reverse proxy, which the relay phone's `wss://` connection
+needs. Both join the Docker network named by `PROXY_NETWORK`, as
+`sms-gateway` and `sms-frontend`, and are served on one hostname: the proxy
+sends `/api`, `/v1` and `/phone` to `sms-gateway:4000` and everything else to
+`sms-frontend:3000` (see [`deploy/Caddyfile`](deploy/Caddyfile)). The page
+uses the open `/api` endpoints, so the server's `.env` sets `PUBLIC_API=true`;
+the per-phone, per-IP, global and daily limits still apply. On a server with
+no proxy, `COMPOSE_PROFILES=standalone` also runs the bundled Caddy on ports
+80/443:
 
 ```sh
 cd deploy
@@ -289,10 +293,10 @@ the script). For a USB modem, uncomment `devices:` in `docker-compose.yml`.
 
 Every push to `main` that passes CI is deployed automatically:
 
-1. CI builds the backend image and pushes it to
-   `ghcr.io/<owner>/sms-gateway:<commit-sha>`.
+1. CI builds the backend and page images and pushes them to
+   `ghcr.io/<owner>/sms-gateway:<sha>` and `ghcr.io/<owner>/sms-frontend:<sha>`.
 2. The `deploy` job copies `deploy/` to the VPS over SSH and runs
-   `deploy/deploy.sh <image>` there.
+   `deploy/deploy.sh <backend-image> <frontend-image>` there.
 3. `deploy.sh` refuses a half-filled `.env` (empty or example values), backs
    up the database, starts the new image, and waits until
    `https://$PHX_HOST/v1/status` answers. If it doesn't within 3 minutes, it
