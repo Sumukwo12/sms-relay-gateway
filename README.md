@@ -81,7 +81,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 3. In the **Setup** tab:
    - **WebSocket URL**:
      - Local LAN testing: `ws://192.168.1.X:4000/phone/websocket`
-     - Production: `wss://api.yourdomain.com/phone/websocket`
+     - Production: `wss://sms.strand.co.ke/phone/websocket`
    - **Gateway Token**: Enter the matching `PHONE_GATEWAY_TOKEN`.
    - **SIM Card**: Select your active SIM slot.
 4. Tap **Test Connection** to confirm connectivity, then **Save Settings**.
@@ -266,18 +266,74 @@ The body has `text` (Slack) and `content` (Discord) plus `alert`, `status`
 
 ## Deploying
 
-`deploy/` runs the backend as a Docker container behind Caddy, which gets the
-HTTPS certificate the relay phone's `wss://` connection needs:
+`deploy/` runs the backend as a Docker container behind an HTTPS reverse
+proxy, which the relay phone's `wss://` connection needs. The backend joins
+the Docker network named by `PROXY_NETWORK` as `sms-gateway`, so an existing
+proxy container on that network serves it with `reverse_proxy
+sms-gateway:4000`. On a server with no proxy, `COMPOSE_PROFILES=standalone`
+also runs the bundled Caddy on ports 80/443:
 
 ```sh
 cd deploy
 cp .env.example .env      # set PHX_HOST, SECRET_KEY_BASE, API_KEYS, PHONE_GATEWAY_TOKEN…
+echo COMPOSE_PROFILES=standalone >> .env   # only without an existing proxy
+docker network create sms-gateway-proxy    # the default PROXY_NETWORK
 docker compose up -d --build
 ```
 
 The SQLite database lives in the `gateway-data` volume and migrations run on
 boot. Back it up nightly with `deploy/backup.sh` from cron (instructions in
 the script). For a USB modem, uncomment `devices:` in `docker-compose.yml`.
+
+### Continuous deployment to a VPS
+
+Every push to `main` that passes CI is deployed automatically:
+
+1. CI builds the backend image and pushes it to
+   `ghcr.io/<owner>/sms-gateway:<commit-sha>`.
+2. The `deploy` job copies `deploy/` to the VPS over SSH and runs
+   `deploy/deploy.sh <image>` there.
+3. `deploy.sh` refuses a half-filled `.env` (empty or example values), backs
+   up the database, starts the new image, and waits until
+   `https://$PHX_HOST/v1/status` answers. If it doesn't within 3 minutes, it
+   rolls back to the previous image and the job fails.
+
+**One-time VPS setup** (Ubuntu/Debian, x86-64). Point the hostname's DNS A
+record at the server, generate the CI key pair on your PC
+(`ssh-keygen -t ed25519 -N "" -f deploy_key`), then run
+[`deploy/server-setup.sh`](deploy/server-setup.sh) on the server as root:
+
+```sh
+APP_HOST=sms.strand.co.ke DEPLOY_PATH=/apps/sms-gateway \
+DEPLOY_KEY='<contents of deploy_key.pub>' bash server-setup.sh
+```
+
+It installs Docker if needed, creates the `deploy` user (SSH key only) and
+`.env` with fresh secrets (never overwriting an existing one). If a Caddy
+container already serves port 443, it adds the site to that Caddyfile
+(backed up, validated, restored on failure) and joins its network; otherwise
+it enables the bundled Caddy. Optionally add the nightly `backup.sh` cron
+line from that script.
+
+**GitHub settings** (Settings → Secrets and variables → Actions):
+
+| Kind                                | Name              | Value                                                       |
+| ----------------------------------- | ----------------- | ----------------------------------------------------------- |
+| Repository variable                 | `VPS_HOST`        | Server IP or hostname (deploys are skipped while unset)     |
+| Repository variable                 | `VPS_USER`        | `deploy`                                                    |
+| Repository variable                 | `PHX_HOST`        | `sms.strand.co.ke`                                          |
+| Repository variable (optional)      | `VPS_PORT`        | SSH port, default `22`                                      |
+| Repository variable (optional)      | `DEPLOY_PATH`     | `/apps/sms-gateway` (default `/opt/sms-gateway`)            |
+| Secret, environment `production`    | `VPS_SSH_KEY`     | Private key (`ssh-keygen -t ed25519 -N "" -f deploy_key`)   |
+| Secret, environment `production`    | `VPS_KNOWN_HOSTS` | Output of `ssh-keyscan -p <port> <host>`, checked against the server's fingerprint |
+
+Add required reviewers to the `production` environment if you want to
+approve each deploy by hand. To deploy `main` without a new push (e.g. right
+after filling these in), use **Actions → CI → Run workflow**.
+
+**Rollback:** `ssh deploy@<host> /apps/sms-gateway/deploy/deploy.sh --rollback`
+switches back to the previous image. A database backup is taken before every
+deploy in `deploy/backups/`, in case a migration needs undoing.
 
 ## Tests
 
