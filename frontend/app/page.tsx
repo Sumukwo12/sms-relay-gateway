@@ -1,4 +1,5 @@
 import Link from "next/link";
+import IntegrationDemo from "./components/integration-demo";
 import {
   BadgeCheck,
   Code2,
@@ -129,6 +130,9 @@ export default function Home() {
               Sign in
             </Link>
           </div>
+          <a href="#simulation" className="mt-4 inline-block text-sm font-medium text-amber-700 underline-offset-4 hover:underline dark:text-amber-400">
+            Watch the demo ↓
+          </a>
         </section>
 
         <section aria-labelledby="how">
@@ -182,6 +186,17 @@ export default function Home() {
   -d '{"phone": "+254712345678"}'`}</pre>
             <p className="mt-3 text-xs text-zinc-400">Full documentation is in your dashboard after signing in.</p>
           </div>
+        </section>
+
+        <section className="mt-16" aria-labelledby="simulation">
+          <h2 id="simulation" className="text-center text-2xl font-semibold tracking-tight">
+            See it in action
+          </h2>
+          <p className="mx-auto mt-2 mb-6 max-w-2xl text-center text-sm text-zinc-600 dark:text-zinc-400">
+            A simulated phone verification on a website, end to end. Watch each request travel from the visitor&apos;s
+            browser to your phone and back, with the exact API calls your website would make.
+          </p>
+          <IntegrationDemo />
         </section>
 
         <section className="mt-16" aria-labelledby="developers">
