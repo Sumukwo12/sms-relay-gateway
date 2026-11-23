@@ -7,7 +7,7 @@ import { useLoad } from "../../lib/use-load";
 import { Alert, Button, Card, OnlineDot, PageHeader, Spinner, timeAgo } from "../../components/ui";
 import { useSession } from "../session";
 
-const APP_DOWNLOAD_URL = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL;
+import { APP_DOWNLOAD_URL, APP_SIZE, APP_VERSION } from "../../lib/site";
 
 export default function PhonesPage() {
   const { user } = useSession();
@@ -30,7 +30,7 @@ export default function PhonesPage() {
                 href={APP_DOWNLOAD_URL}
                 className="ml-2 inline-flex items-center gap-1 font-medium text-emerald-700 hover:underline dark:text-emerald-400"
               >
-                <Download className="h-4 w-4" aria-hidden /> Download the APK
+                <Download className="h-4 w-4" aria-hidden /> Download SMS Relay {APP_VERSION} (APK, {APP_SIZE})
               </a>
             ) : (
               " Ask your administrator for the APK."

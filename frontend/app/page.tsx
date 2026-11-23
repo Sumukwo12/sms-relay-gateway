@@ -2,10 +2,20 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import IntegrationDemo from "./components/integration-demo";
 import PostmanUrl from "./components/postman-url";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "./lib/site";
+import {
+  APP_DOWNLOAD_URL,
+  APP_SIZE,
+  APP_VERSION,
+  REPO_URL,
+  SITE_DESCRIPTION,
+  SITE_NAME,
+  SITE_TITLE,
+  SITE_URL,
+} from "./lib/site";
 import {
   BadgeCheck,
   Code2,
+  Download,
   KeyRound,
   FlaskConical,
   ListChecks,
@@ -165,7 +175,22 @@ export default function Home() {
           </span>
           SMS Gateway
         </Link>
-        <nav className="flex items-center gap-2 text-sm">
+        <nav className="flex items-center gap-1 text-sm sm:gap-2">
+          <a
+            href={APP_DOWNLOAD_URL}
+            download
+            className="hidden items-center gap-1.5 rounded-lg px-3 py-2 font-medium hover:bg-zinc-100 sm:inline-flex dark:hover:bg-zinc-900"
+          >
+            <Download className="h-4 w-4" aria-hidden /> Get the app
+          </a>
+          <a
+            href={REPO_URL}
+            target="_blank"
+            rel="noopener"
+            className="hidden items-center gap-1.5 rounded-lg px-3 py-2 font-medium hover:bg-zinc-100 md:inline-flex dark:hover:bg-zinc-900"
+          >
+            <Code2 className="h-4 w-4" aria-hidden /> Source
+          </a>
           <Link href="/login" className="rounded-lg px-3 py-2 font-medium hover:bg-zinc-100 dark:hover:bg-zinc-900">
             Sign in
           </Link>
@@ -189,10 +214,17 @@ export default function Home() {
             <Link href="/register" className="rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white hover:bg-emerald-700">
               Create an account
             </Link>
-            <Link href="/login" className="rounded-lg border border-zinc-300 px-5 py-2.5 font-semibold hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900">
-              Sign in
-            </Link>
+            <a
+              href={APP_DOWNLOAD_URL}
+              download
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 px-5 py-2.5 font-semibold hover:bg-white dark:border-zinc-700 dark:hover:bg-zinc-900"
+            >
+              <Download className="h-4 w-4" aria-hidden /> Download the Android app
+            </a>
           </div>
+          <p className="mt-3 text-xs text-zinc-500">
+            Already have an account? <Link href="/login" className="font-medium underline">Sign in</Link>
+          </p>
           <a href="#simulation" className="mt-4 inline-block text-sm font-medium text-amber-700 underline-offset-4 hover:underline dark:text-amber-400">
             Watch the demo ↓
           </a>
@@ -228,6 +260,47 @@ export default function Home() {
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section
+          id="app"
+          aria-labelledby="app-heading"
+          className="mt-16 rounded-2xl border border-emerald-200 bg-emerald-50 p-6 sm:p-8 dark:border-emerald-900 dark:bg-emerald-950/50"
+        >
+          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="max-w-xl">
+              <h2 id="app-heading" className="text-2xl font-semibold tracking-tight">
+                Get the SMS Relay app
+              </h2>
+              <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">
+                The Android app that turns your phone into the gateway. Install it, sign in with your account, and
+                keep the phone charged and online.
+              </p>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-zinc-600 dark:text-zinc-400">
+                <li>
+                  Android may warn about installing an app from outside the Play Store. Allow it for your browser or
+                  file manager.
+                </li>
+                <li>
+                  If SMS permission is blocked (&ldquo;restricted setting&rdquo;): Settings → Apps → SMS Relay → ⋮ →
+                  Allow restricted settings.
+                </li>
+                <li>On Xiaomi, Redmi and Samsung, turn on Autostart and set battery to No restrictions.</li>
+              </ul>
+            </div>
+            <div className="shrink-0 text-center">
+              <a
+                href={APP_DOWNLOAD_URL}
+                download
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 font-semibold text-white hover:bg-emerald-700"
+              >
+                <Download className="h-5 w-5" aria-hidden /> Download APK
+              </a>
+              <p className="mt-2 text-xs text-zinc-500">
+                Version {APP_VERSION} · {APP_SIZE} · Android 7+
+              </p>
+            </div>
           </div>
         </section>
 
@@ -429,6 +502,12 @@ export default function Home() {
               <li><a href="/openapi.json" className="hover:underline">OpenAPI specification (JSON)</a></li>
               <li><Link href="/register" className="hover:underline">Get a free API key</Link></li>
               <li><Link href="/login" className="hover:underline">Sign in to your dashboard</Link></li>
+              <li><a href={APP_DOWNLOAD_URL} download className="hover:underline">Download the SMS Relay Android app</a></li>
+              <li>
+                <a href={REPO_URL} target="_blank" rel="noopener" className="hover:underline">
+                  Source code on GitHub
+                </a>
+              </li>
             </ul>
           </nav>
         </div>

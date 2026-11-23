@@ -1,15 +1,61 @@
-# SMS Phone Verification
+# SMS Relay Gateway
 
-A self-hosted SMS gateway, a low-cost alternative to per-message SMS
-providers. People sign up, link their own Android phone (with the SMS
-Relay app) and get API keys; their systems send verification codes and
-notifications through that phone and its SIM.
+**Turn an Android phone into your own SMS gateway.** Send OTP verification
+codes and SMS notifications from your website or app through a phone and SIM
+you already own, instead of paying a provider like Twilio for every message.
+
+| | |
+| --- | --- |
+| 🌐 **Live site** | [sms.strand.co.ke](https://sms.strand.co.ke) |
+| 📱 **Android app** | [Download SMS Relay 1.2.0 (APK, 71 MB)](https://sms.strand.co.ke/downloads/sms-relay.apk) · also in this repo: [`frontend/public/downloads/sms-relay.apk`](frontend/public/downloads/sms-relay.apk) |
+| 📘 **API spec** | [OpenAPI 3.1 (`/openapi.json`)](https://sms.strand.co.ke/openapi.json), importable into Postman |
+| 🧪 **Try it** | [Interactive demo](https://sms.strand.co.ke/#simulation) · [Postman guide](https://sms.strand.co.ke/#postman) |
+| 🧑‍💻 **Source** | [github.com/Sumukwo12/sms-phone-verification](https://github.com/Sumukwo12/sms-phone-verification) |
+
+## How it works
+
+```
+Your website ──► your backend ──► SMS Relay Gateway ──► your Android phone ──► SMS
+                 (holds the API key)    (this server)      (SMS Relay app + SIM)
+```
+
+1. **Create an account** at [/register](https://sms.strand.co.ke/register) or
+   in the app. An administrator approves new accounts.
+2. **Install the app** ([APK](https://sms.strand.co.ke/downloads/sms-relay.apk))
+   on an Android 7+ phone with a SIM and sign in. The phone becomes your gateway.
+3. **Create an API key** in the dashboard. Start with a **test key**
+   (`sk_test_…`): nothing is sent and OTP codes come back in the response.
+4. **Call the API from your backend**: `POST /v1/otp/send` and
+   `POST /v1/otp/verify` for phone verification, `POST /v1/messages` for any
+   SMS. Swap in a live key (`sk_…`) when it works.
+
+```sh
+curl -X POST https://sms.strand.co.ke/v1/otp/send \
+  -H "Authorization: Bearer sk_test_…" \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "0712345678"}'
+```
+
+Keep API keys on your server (e.g. in `.env`), never in browser JavaScript
+or a mobile app: anyone with a key can send SMS through your phone.
+
+### Installing the app
+
+Android blocks SMS access for apps installed from outside the Play Store
+until you allow it: **Settings → Apps → SMS Relay → ⋮ → Allow restricted
+settings**, then grant SMS permission. On Xiaomi, Redmi and Samsung phones
+also turn on **Autostart** and set battery to **No restrictions**, or the
+phone may stop relaying in the background. Android may ask to allow "a large
+number of messages" after about 30 SMS in 30 minutes.
+
+## What's in this repository
 
 | Folder      | What it is                                                                       |
 | ----------- | -------------------------------------------------------------------------------- |
 | `backend/`  | Phoenix JSON API: accounts, API keys, OTP codes, queue, routing to users' phones |
 | `frontend/` | Next.js site: home page, sign-up, user dashboard, admin panel, integration docs  |
 | `mobile/`   | React Native Android app (SMS Relay): signs in and sends the SMS from its SIM     |
+| `deploy/`   | Docker Compose, Caddy and scripts for a VPS; CI deploys `main` automatically     |
 
 Nothing works without signing in: the website shows only the home page,
 sign-in and sign-up to visitors, and the app shows only a welcome screen.
