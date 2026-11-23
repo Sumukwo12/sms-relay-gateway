@@ -1,5 +1,6 @@
 import Link from "next/link";
 import IntegrationDemo from "./components/integration-demo";
+import PostmanUrl from "./components/postman-url";
 import {
   BadgeCheck,
   Code2,
@@ -14,6 +15,17 @@ import {
   Wallet,
   Webhook,
 } from "lucide-react";
+
+const POSTMAN_ERRORS: [string, string][] = [
+  [
+    "401 unauthorized",
+    "No key was sent, or it is mistyped or revoked. Set Authorization → Bearer Token with the full key (no spaces, no \"Bearer\" in the field).",
+  ],
+  ["403 account_pending", "A live key on an account that isn't approved yet. Use a test key until an admin approves you."],
+  ["422 invalid_request", "A field is missing or wrong; the response's \"field\" names it."],
+  ["429 rate_limited", "More than 3 codes to one number in an hour. Use another number or wait."],
+  ["429 daily_limit_reached", "Your account's daily SMS limit is used up (test keys don't count)."],
+];
 
 const CREDENTIALS = [
   {
@@ -262,6 +274,82 @@ export default function Home() {
               <pre className="mt-4 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-xs text-amber-950 dark:bg-black/30 dark:text-amber-100">{`Browser  ──►  your backend  ──►  SMS Gateway  ──►  your phone  ──►  SMS
               (holds sk_…)`}</pre>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-16" aria-labelledby="postman">
+          <h2 id="postman" className="text-center text-2xl font-semibold tracking-tight">
+            Test it with Postman
+          </h2>
+          <p className="mx-auto mt-2 max-w-2xl text-center text-sm text-zinc-600 dark:text-zinc-400">
+            Try the API before writing any code. With a test key nothing is sent, and verification codes come back
+            in the response.
+          </p>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+              <h3 className="font-semibold">Set up once</h3>
+              <ol className="mt-3 list-decimal space-y-3 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
+                <li>
+                  <strong className="text-zinc-800 dark:text-zinc-200">Get a test key.</strong> Sign in, open{" "}
+                  <em>API keys</em>, create a key of type <em>Test</em> and copy the <code className="text-xs">sk_test_…</code>{" "}
+                  value (it&apos;s shown once).
+                </li>
+                <li>
+                  <strong className="text-zinc-800 dark:text-zinc-200">Import the API.</strong> In Postman choose{" "}
+                  <em>Import → Link</em> and paste:
+                  <PostmanUrl />
+                </li>
+                <li>
+                  <strong className="text-zinc-800 dark:text-zinc-200">Add your key.</strong> Open the imported
+                  collection&apos;s <em>Authorization</em> tab, choose <em>Bearer Token</em> and paste the key: just{" "}
+                  <code className="text-xs">sk_test_…</code>, without the word &ldquo;Bearer&rdquo;. Requests inside
+                  use <em>Inherit auth from parent</em>.
+                </li>
+              </ol>
+              <p className="mt-4 text-xs text-zinc-500">
+                No import? On any single request, open <em>Authorization → Bearer Token</em> and paste the key, then
+                use <em>Body → raw → JSON</em>.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-950 p-6 text-sm text-zinc-100 dark:border-zinc-800">
+              <h3 className="font-semibold">Then run, in order</h3>
+              <pre className="mt-3 overflow-x-auto font-mono text-xs leading-relaxed text-zinc-300">{`1  GET  /v1/status
+   → 200  your account and whether your phone is online
+
+2  POST /v1/otp/send      {"phone": "0712345678"}
+   → 202  {"test_code": "483921", "message": {"status": "delivered", …}}
+
+3  POST /v1/otp/verify    {"phone": "0712345678", "code": "483921"}
+   → 200  {"verified": true}        (again → 422: codes work once)
+
+4  POST /v1/messages      {"to": "0712345678", "body": "Hello"}
+   → 202  then GET /v1/messages/{id} for its status`}</pre>
+              <p className="mt-3 text-xs text-zinc-400">
+                Works? Swap in a live key (<code>sk_…</code>) with your phone online: step 2 sends a real SMS and no
+                longer returns <code>test_code</code>.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="border-b border-zinc-200 text-xs uppercase text-zinc-500 dark:border-zinc-800">
+                <tr>
+                  <th className="px-5 py-2.5 font-medium">If you see</th>
+                  <th className="px-5 py-2.5 font-medium">It means</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 text-zinc-700 dark:divide-zinc-800 dark:text-zinc-300">
+                {POSTMAN_ERRORS.map(([code, meaning]) => (
+                  <tr key={code}>
+                    <td className="whitespace-nowrap px-5 py-2.5 font-mono text-xs">{code}</td>
+                    <td className="px-5 py-2.5">{meaning}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       </main>
