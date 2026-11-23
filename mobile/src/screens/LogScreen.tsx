@@ -54,9 +54,9 @@ export const LogScreen: React.FC<LogScreenProps> = ({ isDark }) => {
   const getStatusBadge = (status: LogEntry['status']) => {
     switch (status) {
       case 'delivered':
-        return { text: 'DELIVERED', color: '#10B981', bg: '#064E3B25' };
+        return { text: 'DELIVERED', color: '#607938', bg: '#2E3A1C25' };
       case 'sent':
-        return { text: 'SENT', color: '#3B82F6', bg: '#1D4ED825' };
+        return { text: 'SENT', color: '#6F8A40', bg: '#4B5F2C25' };
       case 'failed':
         return { text: 'FAILED', color: '#EF4444', bg: '#991B1B25' };
     }
@@ -222,38 +222,38 @@ const styles = StyleSheet.create({
 
 const darkStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#2B1A0A',
   },
   headerBorder: {
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#3F270F',
   },
   card: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
+    backgroundColor: '#3F270F',
+    borderColor: '#5E4021',
   },
   text: {
-    color: '#F8FAFC',
+    color: '#F6EDDF',
   },
   subText: {
-    color: '#94A3B8',
+    color: '#C7AA7E',
   },
 });
 
 const lightStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F6EDDF',
   },
   headerBorder: {
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#E8D6B8',
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
+    borderColor: '#E8D6B8',
   },
   text: {
-    color: '#0F172A',
+    color: '#2B1A0A',
   },
   subText: {
-    color: '#64748B',
+    color: '#7D5E3D',
   },
 });

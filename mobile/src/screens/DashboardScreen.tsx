@@ -89,19 +89,19 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ isDark }) => {
         return {
           title: 'Connected',
           description: 'Listening for outgoing verification requests',
-          bgColor: '#064E3B',
-          borderColor: '#059669',
-          textColor: '#34D399',
-          dotColor: '#10B981',
+          bgColor: '#2E3A1C',
+          borderColor: '#4B5F2C',
+          textColor: '#A9BC78',
+          dotColor: '#607938',
         };
       case 'connecting':
         return {
           title: 'Connecting…',
           description: 'Establishing WebSocket connection to backend',
-          bgColor: '#78350F',
-          borderColor: '#D97706',
-          textColor: '#FBBF24',
-          dotColor: '#F59E0B',
+          bgColor: '#6B3F10',
+          borderColor: '#B06A19',
+          textColor: '#E0A152',
+          dotColor: '#CE7F20',
         };
       case 'invalid_token':
         return {
@@ -116,10 +116,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ isDark }) => {
         return {
           title: 'Disconnected',
           description: isRunning ? 'Reconnecting to backend…' : 'Service is currently paused',
-          bgColor: isDark ? '#1E293B' : '#F1F5F9',
-          borderColor: isDark ? '#334155' : '#CBD5E1',
-          textColor: isDark ? '#94A3B8' : '#64748B',
-          dotColor: '#94A3B8',
+          bgColor: isDark ? '#3F270F' : '#F3E8D6',
+          borderColor: isDark ? '#5E4021' : '#DBC5A1',
+          textColor: isDark ? '#C7AA7E' : '#7D5E3D',
+          dotColor: '#C7AA7E',
         };
     }
   };
@@ -154,8 +154,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ isDark }) => {
           <Switch
             value={isRunning}
             onValueChange={handleToggleService}
-            thumbColor={isRunning ? '#10B981' : '#94A3B8'}
-            trackColor={{ false: '#475569', true: '#065F46' }}
+            thumbColor={isRunning ? '#607938' : '#C7AA7E'}
+            trackColor={{ false: '#6B4D2C', true: '#3B4A23' }}
           />
         </View>
         <Text style={[styles.statusDescription, themeStyles.subText]}>{badge.description}</Text>
@@ -164,7 +164,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ isDark }) => {
       {/* Counters Grid */}
       <View style={styles.statsRow}>
         <View style={[styles.statCard, themeStyles.card]}>
-          <Text style={[styles.statValue, { color: '#10B981' }]}>{stats.sentToday}</Text>
+          <Text style={[styles.statValue, { color: '#607938' }]}>{stats.sentToday}</Text>
           <Text style={[styles.statLabel, themeStyles.subText]}>Sent Today</Text>
         </View>
         <View style={[styles.statCard, themeStyles.card]}>
@@ -184,7 +184,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ isDark }) => {
         <TextInput
           style={[styles.input, themeStyles.input]}
           placeholder="+254712345678"
-          placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+          placeholderTextColor={isDark ? '#7D5E3D' : '#C7AA7E'}
           value={testPhone}
           onChangeText={setTestPhone}
           keyboardType="phone-pad"
@@ -195,7 +195,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ isDark }) => {
         <TextInput
           style={[styles.input, themeStyles.input]}
           placeholder="Message body"
-          placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
+          placeholderTextColor={isDark ? '#7D5E3D' : '#C7AA7E'}
           value={testMessage}
           onChangeText={setTestMessage}
           autoCapitalize="none"
@@ -231,13 +231,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   batteryBannerTitle: {
-    color: '#F59E0B',
+    color: '#CE7F20',
     fontWeight: '700',
     fontSize: 14,
     marginBottom: 4,
   },
   batteryBannerText: {
-    color: '#D1D5DB',
+    color: '#DBC5A1',
     fontSize: 13,
     lineHeight: 18,
   },
@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   button: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#607938',
     borderRadius: 10,
     paddingVertical: 13,
     alignItems: 'center',
@@ -339,52 +339,52 @@ const styles = StyleSheet.create({
 
 const darkStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#2B1A0A',
   },
   card: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
+    backgroundColor: '#3F270F',
+    borderColor: '#5E4021',
   },
   batteryBanner: {
-    backgroundColor: '#451A03',
-    borderColor: '#B45309',
+    backgroundColor: '#2E1A06',
+    borderColor: '#8C5314',
     borderWidth: 1,
   },
   text: {
-    color: '#F8FAFC',
+    color: '#F6EDDF',
   },
   subText: {
-    color: '#94A3B8',
+    color: '#C7AA7E',
   },
   input: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    color: '#F8FAFC',
+    backgroundColor: '#2B1A0A',
+    borderColor: '#5E4021',
+    color: '#F6EDDF',
   },
 });
 
 const lightStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F6EDDF',
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
+    borderColor: '#E8D6B8',
   },
   batteryBanner: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#F59E0B',
+    backgroundColor: '#F5DFBF',
+    borderColor: '#CE7F20',
     borderWidth: 1,
   },
   text: {
-    color: '#0F172A',
+    color: '#2B1A0A',
   },
   subText: {
-    color: '#64748B',
+    color: '#7D5E3D',
   },
   input: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#CBD5E1',
-    color: '#0F172A',
+    backgroundColor: '#F6EDDF',
+    borderColor: '#DBC5A1',
+    color: '#2B1A0A',
   },
 });

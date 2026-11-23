@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/*
+ * Brand palette (https://colorhunt.co/palette/ce7f20eedfc7607938533416):
+ *   amber  #CE7F20 — highlights, warnings
+ *   cream  #EEDFC7 — page background
+ *   olive  #607938 — primary actions, "online", success
+ *   brown  #533416 — text, dark theme
+ * The components use Tailwind's emerald / zinc / amber scales; they are
+ * redefined here from the palette so every page follows it.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eedfc7;
+  --foreground: #533416;
 }
 
 @theme inline {
@@ -12,10 +21,51 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@theme {
+  /* olive, from #607938 */
+  --color-emerald-50: #f3f6ec;
+  --color-emerald-100: #e4ebd3;
+  --color-emerald-200: #c9d6a8;
+  --color-emerald-300: #a9bc78;
+  --color-emerald-400: #8aa456;
+  --color-emerald-500: #6f8a40;
+  --color-emerald-600: #607938;
+  --color-emerald-700: #4b5f2c;
+  --color-emerald-800: #3b4a23;
+  --color-emerald-900: #2e3a1c;
+  --color-emerald-950: #1c240f;
+
+  /* warm neutrals, cream #EEDFC7 → brown #533416 */
+  --color-zinc-50: #eedfc7;
+  --color-zinc-100: #e8d6b8;
+  --color-zinc-200: #dbc5a1;
+  --color-zinc-300: #c7aa7e;
+  --color-zinc-400: #a8885f;
+  --color-zinc-500: #7d5e3d;
+  --color-zinc-600: #6b4d2c;
+  --color-zinc-700: #5e4021;
+  --color-zinc-800: #533416;
+  --color-zinc-900: #3d260f;
+  --color-zinc-950: #24160a;
+
+  /* amber, from #CE7F20 */
+  --color-amber-50: #fbf1e3;
+  --color-amber-100: #f5dfbf;
+  --color-amber-200: #ecc189;
+  --color-amber-300: #e0a152;
+  --color-amber-400: #d68c33;
+  --color-amber-500: #ce7f20;
+  --color-amber-600: #b06a19;
+  --color-amber-700: #8c5314;
+  --color-amber-800: #6b3f10;
+  --color-amber-900: #52300c;
+  --color-amber-950: #2e1a06;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #24160a;
+    --foreground: #eedfc7;
   }
 }
 

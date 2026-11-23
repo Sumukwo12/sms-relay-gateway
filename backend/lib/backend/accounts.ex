@@ -2,11 +2,12 @@ defmodule Backend.Accounts do
   @moduledoc """
   User accounts, their sessions, the phones they link and their API keys.
 
-  The first account ever registered, and any email in `:admin_emails`, is an
-  approved admin. Everyone else starts `pending`: they can sign in, link a
-  phone and create keys, but nothing they queue is sent until an admin
-  approves them. `suspended` users cannot sign in, their keys stop working
-  and their phones are disconnected.
+  Registering always creates a `pending` user: they can sign in, link a phone
+  and create keys, but nothing they queue is sent until an admin approves
+  them. Nobody can register as an admin. The admin account comes from the
+  server's `ADMIN_EMAIL` / `ADMIN_PASSWORD` (`ensure_admin/0`, at boot), and
+  admins can promote other users. `suspended` users cannot sign in, their
+  keys stop working and their phones are disconnected.
   """
 
   import Ecto.Query
@@ -30,14 +31,11 @@ defmodule Backend.Accounts do
 
     with :ok <- validate_password(password),
          true <- changeset.valid? || {:error, errors(changeset)} do
-      email = Ecto.Changeset.get_field(changeset, :email)
-      admin? = not Repo.exists?(User) or email in admin_emails()
-
       changeset
       |> Ecto.Changeset.change(
         password_hash: Password.hash(password),
-        role: if(admin?, do: "admin", else: "user"),
-        status: if(admin?, do: "approved", else: "pending"),
+        role: "user",
+        status: "pending",
         webhook_secret: Token.generate("whsec_", 24)
       )
       |> Repo.insert()
@@ -50,6 +48,41 @@ defmodule Backend.Accounts do
           {:error, errors(changeset)}
       end
     end
+  end
+
+  @doc """
+  Make sure the server's admin account exists: `config :backend, admin:
+  {email, password}` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). Creates it, or turns
+  an existing account with that email into an approved admin (its password
+  is left alone). Does nothing when not configured.
+  """
+  def ensure_admin do
+    case Application.get_env(:backend, :admin) do
+      {email, password} when is_binary(email) and is_binary(password) ->
+        email = User.normalize_email(email)
+
+        case Repo.get_by(User, email: email) do
+          nil ->
+            with {:ok, user} <- register(%{email: email, password: password, name: "Admin"}) do
+              promote_admin(user)
+            end
+
+          %User{role: "admin", status: "approved"} = user ->
+            {:ok, user}
+
+          user ->
+            promote_admin(user)
+        end
+
+      _ ->
+        :not_configured
+    end
+  end
+
+  defp promote_admin(user) do
+    user = user |> Ecto.Changeset.change(role: "admin", status: "approved") |> Repo.update!()
+    Logger.info("[Accounts] #{user.email} is the server admin")
+    {:ok, user}
   end
 
   @doc "Check an email and password."
@@ -394,10 +427,6 @@ defmodule Backend.Accounts do
   end
 
   defp validate_password(_), do: {:error, %{password: "is required"}}
-
-  defp admin_emails do
-    Application.get_env(:backend, :admin_emails, []) |> Enum.map(&User.normalize_email/1)
-  end
 
   @doc "First error message per field, e.g. `%{email: \"is already registered\"}`."
   def errors(%Ecto.Changeset{} = changeset) do

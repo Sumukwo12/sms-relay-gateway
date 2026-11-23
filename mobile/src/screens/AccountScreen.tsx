@@ -135,16 +135,21 @@ const Row: React.FC<{ label: string; value: string; theme: typeof darkStyles }> 
   </View>
 );
 
-const SignInForm: React.FC<{ isDark: boolean }> = ({ isDark }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+export const SignInForm: React.FC<{
+  isDark: boolean;
+  initialMode?: 'signin' | 'signup';
+  onBack?: () => void;
+}> = ({ isDark, initialMode = 'signin', onBack }) => {
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [server, setServer] = useState(DEFAULT_SERVER);
+  const [editServer, setEditServer] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const theme = isDark ? darkStyles : lightStyles;
-  const placeholderColor = isDark ? '#64748B' : '#94A3B8';
+  const placeholderColor = isDark ? '#7D5E3D' : '#C7AA7E';
 
   const submit = async () => {
     const base = httpBaseFromInput(server);
@@ -178,19 +183,32 @@ const SignInForm: React.FC<{ isDark: boolean }> = ({ isDark }) => {
     <View style={[styles.card, theme.card]}>
       <Text style={[styles.cardTitle, theme.text]}>{isSignUp ? 'Create an account' : 'Sign in'}</Text>
       <Text style={[styles.cardSubtitle, theme.subText]}>
-        Sign in to turn this phone into your SMS gateway. Your messages go out through its SIM.
+        {isSignUp
+          ? 'Your account is reviewed by an administrator before it can send SMS. You can sign in and link this phone right away.'
+          : 'Sign in to turn this phone into your SMS gateway. Your messages go out through its SIM.'}
       </Text>
 
-      <Text style={[styles.inputLabel, theme.subText]}>Server</Text>
-      <TextInput
-        style={[styles.input, theme.input]}
-        value={server}
-        onChangeText={setServer}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        placeholderTextColor={placeholderColor}
-      />
+      {editServer ? (
+        <>
+          <Text style={[styles.inputLabel, theme.subText]}>Server</Text>
+          <TextInput
+            style={[styles.input, theme.input]}
+            value={server}
+            onChangeText={setServer}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            placeholderTextColor={placeholderColor}
+          />
+        </>
+      ) : (
+        <TouchableOpacity style={styles.serverRow} onPress={() => setEditServer(true)}>
+          <Text style={[styles.rowLabel, theme.subText]} numberOfLines={1}>
+            Server: {server.replace(/^https?:\/\//, '')}
+          </Text>
+          <Text style={styles.linkText}>Change</Text>
+        </TouchableOpacity>
+      )}
 
       {isSignUp && (
         <>
@@ -259,6 +277,12 @@ const SignInForm: React.FC<{ isDark: boolean }> = ({ isDark }) => {
           {isSignUp ? 'Already have an account? Sign in' : 'New here? Create an account'}
         </Text>
       </TouchableOpacity>
+
+      {onBack && (
+        <TouchableOpacity style={styles.linkButton} onPress={onBack}>
+          <Text style={[styles.rowLabel, theme.subText]}>Back</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -290,10 +314,10 @@ const styles = StyleSheet.create({
   banner: { borderRadius: 8, padding: 10, marginBottom: 12 },
   bannerError: { backgroundColor: '#7F1D1D' },
   bannerErrorText: { color: '#FECACA', fontSize: 13, lineHeight: 18 },
-  bannerWarning: { backgroundColor: '#78350F' },
-  bannerWarningText: { color: '#FEF3C7', fontSize: 13, lineHeight: 18 },
+  bannerWarning: { backgroundColor: '#6B3F10' },
+  bannerWarningText: { color: '#F5DFBF', fontSize: 13, lineHeight: 18 },
   primaryButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#607938',
     borderRadius: 10,
     paddingVertical: 13,
     alignItems: 'center',
@@ -310,7 +334,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: { color: '#DC2626', fontWeight: '700', fontSize: 14 },
   linkButton: { alignItems: 'center', paddingVertical: 14 },
-  linkText: { color: '#2563EB', fontWeight: '600', fontSize: 14 },
+  linkText: { color: '#607938', fontWeight: '600', fontSize: 14 },
   disabled: { opacity: 0.6 },
   row: {
     flexDirection: 'row',
@@ -319,21 +343,28 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: { fontSize: 13 },
+  serverRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 12,
+  },
   rowValue: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
 });
 
 const darkStyles = StyleSheet.create({
-  container: { backgroundColor: '#0F172A' },
-  card: { backgroundColor: '#1E293B', borderColor: '#334155' },
-  text: { color: '#F8FAFC' },
-  subText: { color: '#94A3B8' },
-  input: { backgroundColor: '#0F172A', borderColor: '#334155', color: '#F8FAFC' },
+  container: { backgroundColor: '#2B1A0A' },
+  card: { backgroundColor: '#3F270F', borderColor: '#5E4021' },
+  text: { color: '#F6EDDF' },
+  subText: { color: '#C7AA7E' },
+  input: { backgroundColor: '#2B1A0A', borderColor: '#5E4021', color: '#F6EDDF' },
 });
 
 const lightStyles = StyleSheet.create({
-  container: { backgroundColor: '#F8FAFC' },
-  card: { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' },
-  text: { color: '#0F172A' },
-  subText: { color: '#64748B' },
-  input: { backgroundColor: '#F8FAFC', borderColor: '#CBD5E1', color: '#0F172A' },
+  container: { backgroundColor: '#F6EDDF' },
+  card: { backgroundColor: '#FFFFFF', borderColor: '#E8D6B8' },
+  text: { color: '#2B1A0A' },
+  subText: { color: '#7D5E3D' },
+  input: { backgroundColor: '#F6EDDF', borderColor: '#DBC5A1', color: '#2B1A0A' },
 });

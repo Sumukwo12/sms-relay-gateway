@@ -13,6 +13,7 @@ import { DashboardScreen } from './src/screens/DashboardScreen';
 import { SetupScreen } from './src/screens/SetupScreen';
 import { LogScreen } from './src/screens/LogScreen';
 import { AccountScreen } from './src/screens/AccountScreen';
+import { WelcomeScreen } from './src/screens/WelcomeScreen';
 import Constants from 'expo-constants';
 import { relayManager } from './src/relayManager';
 import {
@@ -38,14 +39,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [permissions, setPermissions] = useState<PermissionStatus | null>(null);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
+  // null until storage is loaded; nothing but the welcome screen works signed out
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Follow sign-in / sign-out; land on the dashboard after signing in
+    const unsubscribe = relayManager.subscribe(() => {
+      const now = relayManager.getAccount() !== null;
+      setSignedIn((before) => {
+        if (before === false && now) setActiveTab('dashboard');
+        return now;
+      });
+    });
+
     // Initialize Relay state and storage, then resume the relay if it was on
     relayManager.initialize().then(() => {
-      // Not connected to any server yet: start on the sign-in screen
-      if (!relayManager.getAccount() && !relayManager.getSettings().token) {
-        setActiveTab('account');
-      }
+      setSignedIn(relayManager.getAccount() !== null);
       return relayManager.resumeIfEnabled();
     });
 
@@ -56,6 +65,8 @@ export default function App() {
         setShowPermissionModal(true);
       }
     });
+
+    return unsubscribe;
   }, []);
 
   const handleGrantPermissions = async () => {
@@ -102,13 +113,15 @@ export default function App() {
 
       {/* Screen Container */}
       <View style={styles.screenContainer}>
-        {activeTab === 'dashboard' && <DashboardScreen isDark={isDark} />}
-        {activeTab === 'logs' && <LogScreen isDark={isDark} />}
-        {activeTab === 'account' && <AccountScreen isDark={isDark} />}
-        {activeTab === 'setup' && <SetupScreen isDark={isDark} />}
+        {signedIn === false && <WelcomeScreen isDark={isDark} />}
+        {signedIn && activeTab === 'dashboard' && <DashboardScreen isDark={isDark} />}
+        {signedIn && activeTab === 'logs' && <LogScreen isDark={isDark} />}
+        {signedIn && activeTab === 'account' && <AccountScreen isDark={isDark} />}
+        {signedIn && activeTab === 'setup' && <SetupScreen isDark={isDark} />}
       </View>
 
-      {/* Bottom Navigation Bar */}
+      {/* Bottom Navigation Bar (signed in only) */}
+      {signedIn && (
       <View style={[styles.tabBar, themeStyles.tabBar]}>
         {TABS.map(({ key, label }) => (
           <TouchableOpacity
@@ -127,6 +140,7 @@ export default function App() {
           </TouchableOpacity>
         ))}
       </View>
+      )}
 
       {/* Permissions Explanation Modal */}
       <Modal
@@ -212,7 +226,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandBadge: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#607938',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -234,12 +248,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   permissionStrip: {
-    backgroundColor: '#B45309',
+    backgroundColor: '#8C5314',
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
   permissionStripText: {
-    color: '#FEF3C7',
+    color: '#F5DFBF',
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
@@ -261,14 +275,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   tabItemActive: {
-    backgroundColor: '#2563EB15',
+    backgroundColor: '#60793815',
   },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
   },
   tabTextActive: {
-    color: '#2563EB',
+    color: '#607938',
     fontWeight: '700',
   },
   modalOverlay: {
@@ -302,7 +316,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   permissionItemBullet: {
-    color: '#2563EB',
+    color: '#607938',
     fontSize: 18,
     marginRight: 8,
     lineHeight: 20,
@@ -320,7 +334,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   grantButton: {
-    backgroundColor: '#2563EB',
+    backgroundColor: '#607938',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -333,14 +347,14 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     borderWidth: 1.5,
-    borderColor: '#3B82F6',
+    borderColor: '#6F8A40',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
     marginBottom: 10,
   },
   settingsButtonText: {
-    color: '#3B82F6',
+    color: '#6F8A40',
     fontWeight: '600',
     fontSize: 14,
   },
@@ -349,34 +363,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closeButtonText: {
-    color: '#94A3B8',
+    color: '#C7AA7E',
     fontSize: 13,
   },
 });
 
 const darkStyles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#2B1A0A',
   },
   header: {
-    backgroundColor: '#0F172A',
-    borderBottomColor: '#1E293B',
+    backgroundColor: '#2B1A0A',
+    borderBottomColor: '#3F270F',
   },
   text: {
-    color: '#F8FAFC',
+    color: '#F6EDDF',
   },
   subText: {
-    color: '#94A3B8',
+    color: '#C7AA7E',
   },
   tabBar: {
-    backgroundColor: '#0F172A',
-    borderTopColor: '#1E293B',
+    backgroundColor: '#2B1A0A',
+    borderTopColor: '#3F270F',
   },
   tabTextInactive: {
-    color: '#64748B',
+    color: '#7D5E3D',
   },
   modalCard: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#3F270F',
   },
 });
 
@@ -386,20 +400,20 @@ const lightStyles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#FFFFFF',
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#E8D6B8',
   },
   text: {
-    color: '#0F172A',
+    color: '#2B1A0A',
   },
   subText: {
-    color: '#64748B',
+    color: '#7D5E3D',
   },
   tabBar: {
     backgroundColor: '#FFFFFF',
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#E8D6B8',
   },
   tabTextInactive: {
-    color: '#94A3B8',
+    color: '#C7AA7E',
   },
   modalCard: {
     backgroundColor: '#FFFFFF',

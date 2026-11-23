@@ -80,9 +80,13 @@ if config_env() != :test do
     alert_queue_age_seconds: env_int.("ALERT_QUEUE_AGE_SECONDS"),
     alert_battery_percent: env_int.("ALERT_BATTERY_PERCENT"),
     user_daily_send_limit: env_int.("USER_DAILY_SEND_LIMIT"),
-    admin_emails:
-      if(emails = System.get_env("ADMIN_EMAILS"),
-        do: emails |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+    admin:
+      with(
+        email when is_binary(email) and email != "" <- System.get_env("ADMIN_EMAIL"),
+        password when is_binary(password) and byte_size(password) >= 8 <-
+          System.get_env("ADMIN_PASSWORD"),
+        do: {email, password},
+        else: (_ -> nil)
       ),
     public_api_enabled:
       if(System.get_env("PUBLIC_API"), do: System.get_env("PUBLIC_API") == "true", else: nil)
@@ -147,6 +151,10 @@ if config_env() == :prod do
 
   # Served over HTTPS by the reverse proxy
   config :backend, secure_cookies: true
+
+  # Nothing sends SMS without signing in: the unauthenticated demo API is off
+  # unless PUBLIC_API=true is set explicitly
+  unless System.get_env("PUBLIC_API"), do: config(:backend, public_api_enabled: false)
 
   config :backend, Backend.Repo,
     database:

@@ -7,24 +7,44 @@ defmodule Backend.AccountsTest do
   alias Backend.Accounts.User
 
   describe "register/1" do
-    test "the first account is an approved admin, later ones are pending users" do
+    test "always creates a pending user, even for the very first account" do
       {:ok, first} = Accounts.register(%{email: "Owner@Example.com ", password: password()})
-      assert %User{email: "owner@example.com", role: "admin", status: "approved"} = first
+      assert %User{email: "owner@example.com", role: "user", status: "pending"} = first
       assert "whsec_" <> _ = first.webhook_secret
 
       {:ok, second} = Accounts.register(%{"email" => "dev@example.com", "password" => password()})
       assert %User{role: "user", status: "pending"} = second
     end
+  end
 
-    test "emails in :admin_emails become admins" do
-      admin_fixture()
-      Application.put_env(:backend, :admin_emails, ["boss@example.com"])
-      on_exit(fn -> Application.put_env(:backend, :admin_emails, []) end)
-
-      assert {:ok, %User{role: "admin", status: "approved"}} =
-               Accounts.register(%{email: "BOSS@example.com", password: password()})
+  describe "ensure_admin/0" do
+    setup do
+      on_exit(fn -> Application.put_env(:backend, :admin, nil) end)
     end
 
+    test "creates the configured admin" do
+      assert :not_configured = Accounts.ensure_admin()
+
+      Application.put_env(:backend, :admin, {"Boss@Example.com", password()})
+
+      assert {:ok, %User{email: "boss@example.com", role: "admin", status: "approved"}} =
+               Accounts.ensure_admin()
+
+      assert {:ok, %User{role: "admin"}} = Accounts.authenticate("boss@example.com", password())
+      # Running again (every boot) changes nothing
+      assert {:ok, %User{role: "admin"}} = Accounts.ensure_admin()
+    end
+
+    test "promotes an existing account without changing its password" do
+      {:ok, _} = Accounts.register(%{email: "boss@example.com", password: "their own password"})
+      Application.put_env(:backend, :admin, {"boss@example.com", "configured password"})
+
+      assert {:ok, %User{role: "admin", status: "approved"}} = Accounts.ensure_admin()
+      assert {:ok, _} = Accounts.authenticate("boss@example.com", "their own password")
+    end
+  end
+
+  describe "register/1 validation" do
     test "validates email, password and uniqueness" do
       assert {:error, %{password: "must be at least 8 characters"}} =
                Accounts.register(%{email: "a@example.com", password: "short"})

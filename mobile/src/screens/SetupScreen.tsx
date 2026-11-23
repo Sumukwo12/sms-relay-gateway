@@ -4,13 +4,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { getSimCards } from 'sms-sender';
-import { relayManager, getUrlSecurityWarning } from '../relayManager';
+import { relayManager } from '../relayManager';
 import { SimCardInfo } from '../types';
 
 interface SetupScreenProps {
@@ -19,14 +17,8 @@ interface SetupScreenProps {
 
 export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
   const currentSettings = relayManager.getSettings();
-  const [serverUrl, setServerUrl] = useState(currentSettings.serverUrl);
-  const [token, setToken] = useState(currentSettings.token);
   const [selectedSubId, setSelectedSubId] = useState<number | null>(currentSettings.selectedSubId);
-  const signedIn = relayManager.getAccount() !== null;
-  // Manual URL + server token: the legacy setup, for servers without accounts
-  const [showAdvanced, setShowAdvanced] = useState(!signedIn && !!currentSettings.token);
-
-  // The SIM choice is saved right away (with or without an account)
+  // The SIM choice is saved right away
   const chooseSim = async (subId: number) => {
     setSelectedSubId(subId);
     await relayManager.updateSettings({ ...relayManager.getSettings(), selectedSubId: subId });
@@ -34,10 +26,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
 
   const [simCards, setSimCards] = useState<SimCardInfo[]>([]);
   const [isLoadingSims, setIsLoadingSims] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  const securityWarning = getUrlSecurityWarning(serverUrl);
 
   const refreshSimList = async () => {
     setIsLoadingSims(true);
@@ -75,123 +64,10 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
 
 
 
-  const handleTestConnection = async () => {
-    if (!serverUrl.trim() || !token.trim()) {
-      Alert.alert('Required Fields', 'Please enter both the Server URL and Gateway Token to test.');
-      return;
-    }
-
-    setIsTesting(true);
-    setTestResult(null);
-
-    const result = await relayManager.testConnection(serverUrl, token);
-    setTestResult(result);
-    setIsTesting(false);
-  };
-
-  const handleSave = async () => {
-    if (!serverUrl.trim()) {
-      Alert.alert('Validation Error', 'Server URL is required.');
-      return;
-    }
-
-    await relayManager.updateSettings({
-      serverUrl: serverUrl.trim(),
-      token: token.trim(),
-      selectedSubId,
-    });
-
-    Alert.alert('Settings Saved', 'Connection settings have been securely stored.');
-  };
-
   const themeStyles = isDark ? darkStyles : lightStyles;
 
   return (
     <ScrollView style={[styles.container, themeStyles.container]} contentContainerStyle={styles.content}>
-      {/* Server Configuration (advanced: most people sign in on the Account tab) */}
-      <View style={[styles.card, themeStyles.card]}>
-        <TouchableOpacity onPress={() => setShowAdvanced(!showAdvanced)} activeOpacity={0.7}>
-          <View style={styles.simHeader}>
-            <Text style={[styles.cardTitle, themeStyles.text]}>Advanced: server token</Text>
-            <Text style={styles.refreshButtonText}>{showAdvanced ? 'Hide' : 'Show'}</Text>
-          </View>
-          <Text style={[styles.cardSubtitle, themeStyles.subText]}>
-            {signedIn
-              ? 'Not needed: this phone is connected through your account.'
-              : 'Only for servers set up with a shared PHONE_GATEWAY_TOKEN. Otherwise sign in on the Account tab.'}
-          </Text>
-        </TouchableOpacity>
-
-        {showAdvanced && (
-        <>
-        <Text style={[styles.inputLabel, themeStyles.subText]}>WebSocket URL</Text>
-        <TextInput
-          style={[styles.input, themeStyles.input]}
-          placeholder="wss://sms.example.com/phone"
-          placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
-          value={serverUrl}
-          onChangeText={setServerUrl}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        {securityWarning && (
-          <View style={styles.warningBox}>
-            <Text style={styles.warningText}>{securityWarning}</Text>
-          </View>
-        )}
-
-        <Text style={[styles.inputLabel, themeStyles.subText]}>Phone Gateway Token</Text>
-        <TextInput
-          style={[styles.input, themeStyles.input]}
-          placeholder="Secret token matching PHONE_GATEWAY_TOKEN"
-          placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
-          value={token}
-          onChangeText={setToken}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        {testResult && (
-          <View
-            style={[
-              styles.testResultBox,
-              testResult.success ? styles.testSuccessBox : styles.testErrorBox,
-            ]}
-          >
-            <Text
-              style={[
-                styles.testResultText,
-                testResult.success ? styles.testSuccessText : styles.testErrorText,
-              ]}
-            >
-              {testResult.message}
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.testButton, isTesting && styles.buttonDisabled]}
-            onPress={handleTestConnection}
-            disabled={isTesting}
-          >
-            {isTesting ? (
-              <ActivityIndicator color="#2563EB" size="small" />
-            ) : (
-              <Text style={styles.testButtonText}>Test Connection</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-            <Text style={styles.saveButtonText}>Save Settings</Text>
-          </TouchableOpacity>
-        </View>
-        </>
-        )}
-      </View>
-
       {/* SIM Selection Card */}
       <View style={[styles.card, themeStyles.card]}>
         <View style={styles.simHeader}>
@@ -207,7 +83,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
         </View>
 
         {isLoadingSims ? (
-          <ActivityIndicator color="#2563EB" style={{ marginVertical: 12 }} />
+          <ActivityIndicator color="#607938" style={{ marginVertical: 12 }} />
         ) : simCards.length === 0 ? (
           <View style={styles.emptySimBox}>
             <Text style={[styles.emptySimText, themeStyles.subText]}>
@@ -289,13 +165,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   warningBox: {
-    backgroundColor: '#78350F',
+    backgroundColor: '#6B3F10',
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
   },
   warningText: {
-    color: '#FEF3C7',
+    color: '#F5DFBF',
     fontSize: 12,
     lineHeight: 16,
   },
@@ -305,7 +181,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   testSuccessBox: {
-    backgroundColor: '#064E3B',
+    backgroundColor: '#2E3A1C',
   },
   testErrorBox: {
     backgroundColor: '#7F1D1D',
@@ -314,7 +190,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   testSuccessText: {
-    color: '#34D399',
+    color: '#A9BC78',
   },
   testErrorText: {
     color: '#FCA5A5',
@@ -327,19 +203,19 @@ const styles = StyleSheet.create({
   testButton: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: '#2563EB',
+    borderColor: '#607938',
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
   },
   testButtonText: {
-    color: '#2563EB',
+    color: '#607938',
     fontWeight: '700',
     fontSize: 14,
   },
   saveButton: {
     flex: 1,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#607938',
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
@@ -362,17 +238,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 6,
-    backgroundColor: '#2563EB20',
+    backgroundColor: '#60793820',
   },
   refreshButtonText: {
-    color: '#2563EB',
+    color: '#607938',
     fontSize: 12,
     fontWeight: '600',
   },
   emptySimBox: {
     padding: 12,
     borderRadius: 8,
-    backgroundColor: '#64748B15',
+    backgroundColor: '#7D5E3D15',
   },
   emptySimText: {
     fontSize: 13,
@@ -387,15 +263,15 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   simOptionSelected: {
-    borderColor: '#2563EB',
-    backgroundColor: '#2563EB15',
+    borderColor: '#607938',
+    backgroundColor: '#60793815',
   },
   simRadio: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#2563EB',
+    borderColor: '#607938',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -404,7 +280,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#2563EB',
+    backgroundColor: '#607938',
   },
   simInfo: {
     flex: 1,
@@ -421,50 +297,50 @@ const styles = StyleSheet.create({
 
 const darkStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#0F172A',
+    backgroundColor: '#2B1A0A',
   },
   card: {
-    backgroundColor: '#1E293B',
-    borderColor: '#334155',
+    backgroundColor: '#3F270F',
+    borderColor: '#5E4021',
   },
   text: {
-    color: '#F8FAFC',
+    color: '#F6EDDF',
   },
   subText: {
-    color: '#94A3B8',
+    color: '#C7AA7E',
   },
   input: {
-    backgroundColor: '#0F172A',
-    borderColor: '#334155',
-    color: '#F8FAFC',
+    backgroundColor: '#2B1A0A',
+    borderColor: '#5E4021',
+    color: '#F6EDDF',
   },
   simOption: {
-    borderColor: '#334155',
-    backgroundColor: '#0F172A',
+    borderColor: '#5E4021',
+    backgroundColor: '#2B1A0A',
   },
 });
 
 const lightStyles = StyleSheet.create({
   container: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F6EDDF',
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
+    borderColor: '#E8D6B8',
   },
   text: {
-    color: '#0F172A',
+    color: '#2B1A0A',
   },
   subText: {
-    color: '#64748B',
+    color: '#7D5E3D',
   },
   input: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#CBD5E1',
-    color: '#0F172A',
+    backgroundColor: '#F6EDDF',
+    borderColor: '#DBC5A1',
+    color: '#2B1A0A',
   },
   simOption: {
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    borderColor: '#E8D6B8',
+    backgroundColor: '#F6EDDF',
   },
 });

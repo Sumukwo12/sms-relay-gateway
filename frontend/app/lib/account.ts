@@ -146,3 +146,8 @@ export const updateAdminUser = (
 ) => request<{ user: User }>(`/api/admin/users/${id}`, patch(changes));
 
 export const getAdminDevices = () => request<{ devices: Device[] }>("/api/admin/devices");
+
+export type AdminMessage = Message & { owner: string };
+
+export const getAdminMessages = () =>
+  request<{ messages: AdminMessage[] }>("/api/admin/messages");

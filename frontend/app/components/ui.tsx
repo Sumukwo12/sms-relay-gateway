@@ -119,7 +119,7 @@ export function Alert({
       "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300",
     success:
       "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
-    info: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-300",
+    info: "border-zinc-200 bg-zinc-100 text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-200",
     warning:
       "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
   }[tone];
@@ -148,7 +148,7 @@ export function Badge({
     green: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
     amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
     red: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-    blue: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+    blue: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   }[tone];
 
   return (

@@ -156,6 +156,9 @@ class RelayManager {
    * rebooted. Called on app launch and from the boot task.
    */
   public async resumeIfEnabled(): Promise<void> {
+    // The relay only runs for a signed-in account (an old shared-token setup
+    // waits until someone signs in)
+    if (!this.account) return;
     if (this.isServiceRunning || !(await isServiceEnabled())) return;
     if (!this.settings.serverUrl || !this.settings.token) return;
     await this.startService();

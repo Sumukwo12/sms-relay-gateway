@@ -16,6 +16,8 @@ defmodule Backend.Application do
       {Ecto.Migrator,
        repos: Application.fetch_env!(:backend, :ecto_repos),
        skip: not Application.get_env(:backend, :run_migrations_on_boot, true)},
+      # Create or promote the server admin from ADMIN_EMAIL / ADMIN_PASSWORD
+      {Task, &Backend.Accounts.ensure_admin/0},
       # Background jobs (alert notifications)
       {Task.Supervisor, name: Backend.TaskSupervisor},
       # Cachex store for rate limiting (sliding window)

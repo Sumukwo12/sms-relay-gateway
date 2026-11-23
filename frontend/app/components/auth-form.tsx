@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { MessageSquareText } from "lucide-react";
-import { login, register } from "../lib/account";
+import { getMe, login, register, type User } from "../lib/account";
 import type { ApiError } from "../lib/api";
 import { Alert, Button, Field } from "./ui";
+
+// Where each kind of account lands after signing in
+const home = (user: User) => (user.role === "admin" ? "/admin" : "/dashboard");
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
@@ -18,6 +21,17 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   const isRegister = mode === "register";
 
+  // Already signed in: go straight in
+  useEffect(() => {
+    let cancelled = false;
+    getMe().then((res) => {
+      if (!cancelled && res.ok) router.replace(home(res.data.user));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setPending(true);
@@ -28,7 +42,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
       : await login(email.trim(), password);
 
     if (res.ok) {
-      router.push("/dashboard");
+      router.push(home(res.data.user));
       return;
     }
 
@@ -56,7 +70,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           </h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
             {isRegister
-              ? "Send SMS through your own Android phone and SIM."
+              ? "Send SMS through your own Android phone and SIM. An administrator reviews new accounts before they can send."
               : "Welcome back to your SMS gateway."}
           </p>
         </div>

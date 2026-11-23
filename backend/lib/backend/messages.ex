@@ -196,6 +196,12 @@ defmodule Backend.Messages do
     |> Repo.all()
   end
 
+  @doc "The most recent messages of everyone (admin monitoring), newest first."
+  @spec list_recent(pos_integer()) :: [Message.t()]
+  def list_recent(limit \\ 200) do
+    from(m in Message, order_by: [desc: m.inserted_at], limit: ^limit) |> Repo.all()
+  end
+
   @type scope :: :system | :all | pos_integer()
 
   defp scoped(query, :all), do: query

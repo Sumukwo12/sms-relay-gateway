@@ -78,6 +78,7 @@ defmodule BackendWeb.Router do
     get "/users", AdminController, :users
     patch "/users/:id", AdminController, :update_user
     get "/devices", AdminController, :devices
+    get "/messages", AdminController, :messages
   end
 
   # ── SMS Relay app sign-in (device token) ───────────────────────────────────

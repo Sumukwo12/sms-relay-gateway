@@ -43,7 +43,7 @@ export async function updateForegroundNotification(statusText: string): Promise<
       ],
       ongoing: true,
       autoCancel: false,
-      color: '#2563EB',
+      color: '#607938',
       pressAction: {
         id: 'default',
       },

@@ -103,9 +103,9 @@ config :backend,
   # SMS parts each user may send per rolling 24h through their own phones,
   # unless an admin sets a limit for them. Env: USER_DAILY_SEND_LIMIT
   user_daily_send_limit: 200,
-  # Emails that become approved admins when they sign up (the first account
-  # ever registered always does). Env: ADMIN_EMAILS="a@x.com,b@y.com"
-  admin_emails: [],
+  # The server admin account, created or promoted at boot. Nobody can
+  # register as an admin. Env: ADMIN_EMAIL + ADMIN_PASSWORD
+  admin: nil,
   # Mark the session cookie Secure (on in prod, behind HTTPS)
   secure_cookies: false
 

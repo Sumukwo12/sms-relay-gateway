@@ -6,6 +6,7 @@ defmodule BackendWeb.AdminController do
     GET   /api/admin/users      every account with its usage
     PATCH /api/admin/users/:id  {status?, role?, daily_limit?}
     GET   /api/admin/devices    every linked phone
+    GET   /api/admin/messages   the latest 200 messages of everyone
   """
 
   use BackendWeb, :controller
@@ -73,4 +74,20 @@ defmodule BackendWeb.AdminController do
   end
 
   def devices(conn, _params), do: json(conn, %{success: true, devices: AccountJSON.all_devices()})
+
+  def messages(conn, _params) do
+    messages = Messages.list_recent(200)
+    emails = Map.new(Accounts.list_users(), &{&1.id, &1.email})
+
+    json(conn, %{
+      success: true,
+      messages:
+        for m <- messages do
+          m
+          |> AccountJSON.message()
+          # Server-level messages (no user) show the system that sent them
+          |> Map.put(:owner, Map.get(emails, m.user_id) || m.client)
+        end
+    })
+  end
 end

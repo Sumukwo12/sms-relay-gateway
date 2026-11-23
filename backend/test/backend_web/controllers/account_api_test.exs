@@ -306,6 +306,23 @@ defmodule BackendWeb.AccountApiTest do
       assert %{"error" => "forbidden"} = conn |> get("/api/admin/users") |> json_response(403)
     end
 
+    test "sees every user's messages with their owner", %{conn: conn} do
+      admin = admin_fixture()
+      user = user_fixture(status: "approved")
+
+      {:ok, message} =
+        Messages.enqueue(User.client(user), %{to: @phone, body: "hi"}, user_id: user.id)
+
+      {:ok, _} = Messages.enqueue("test_system", %{to: @phone, body: "server"})
+
+      assert %{"messages" => messages} =
+               conn |> sign_in(admin) |> get("/api/admin/messages") |> json_response(200)
+
+      assert %{"owner" => owner} = Enum.find(messages, &(&1["id"] == message.id))
+      assert owner == user.email
+      assert Enum.any?(messages, &(&1["owner"] == "test_system"))
+    end
+
     test "approves, suspends and limits users", %{conn: conn} do
       admin = admin_fixture()
       user = user_fixture()

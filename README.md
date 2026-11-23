@@ -8,28 +8,33 @@ notifications through that phone and its SIM.
 | Folder      | What it is                                                                       |
 | ----------- | -------------------------------------------------------------------------------- |
 | `backend/`  | Phoenix JSON API: accounts, API keys, OTP codes, queue, routing to users' phones |
-| `frontend/` | Next.js site: sign-up, user dashboard, admin, integration docs, `/demo`          |
+| `frontend/` | Next.js site: home page, sign-up, user dashboard, admin panel, integration docs  |
 | `mobile/`   | React Native Android app (SMS Relay): signs in and sends the SMS from its SIM     |
+
+Nothing works without signing in: the website shows only the home page,
+sign-in and sign-up to visitors, and the app shows only a welcome screen.
 
 ## Accounts at a glance
 
-1. **Sign up** on the website (`/register`) or in the app. The first account
-   ever created (and any email in `ADMIN_EMAILS`) is an approved **admin**;
-   everyone else is **pending** until an admin approves them on
-   `/dashboard/admin`.
-2. **Link a phone**: install SMS Relay, open the **Account** tab and sign in
-   with the same email and password. The phone gets its own device token and
-   shows up on `/dashboard/phones`.
-3. **Create an API key** on `/dashboard/keys` and call `/v1` (see
+1. **The admin** is set on the server: `ADMIN_EMAIL` and `ADMIN_PASSWORD` in
+   `deploy/.env` create (or promote) that account when the server starts.
+   Nobody can register as an admin. The admin panel is at `/admin`: system
+   overview, users (approve, suspend, limits, make admin), all phones and all
+   messages.
+2. **Sign up** on the website (`/register`) or in the app. Every new account
+   is a **pending** user until the admin approves it.
+3. **Link a phone**: install SMS Relay, tap **Sign in** and use the same email
+   and password. The phone gets its own device token and shows up on
+   `/dashboard/phones`.
+4. **Create an API key** on `/dashboard/keys` and call `/v1` (see
    `/dashboard/docs`, or [Integration API](#integration-api-v1--for-your-own-systems)).
    Each user's messages go only through their own phones (the most recently
    connected one, or the `device_id` they pass) and count against their own
    daily limit (`USER_DAILY_SEND_LIMIT`, default 200; admins can change it
    per user). Webhooks are signed with the user's webhook secret.
 
-The original single-owner setup still works alongside: `API_KEYS` from the
-environment and the `/demo` page send through the phone signed in with
-`PHONE_GATEWAY_TOKEN`, or else through an admin's phone.
+Server-level `API_KEYS` from the environment still work: they send through
+an admin's phone (or a phone using the old shared `PHONE_GATEWAY_TOKEN`).
 
 ## Quick start (no modem needed)
 
@@ -160,7 +165,7 @@ default to the real modem.
 | --------------------- | ------------------------- | --------------------------------------------------------------- |
 | `MODEM_ADAPTER`       | `mock` (dev), `uart` prod | `mock`, `uart`, `android`, or `phone`                           |
 | `PHONE_GATEWAY_TOKEN` | –                         | Shared token for the legacy server phone (accounts don't need it) |
-| `ADMIN_EMAILS`        | –                         | Comma-separated emails that become admins when they sign up     |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | –             | The admin account, created or promoted at boot                  |
 | `USER_DAILY_SEND_LIMIT` | `200`                   | SMS parts per user per rolling 24h (admins can override per user) |
 | `MODEM_PORT`          | `COM3`                    | Serial port of the USB modem (when `MODEM_ADAPTER=uart`)        |
 | `MODEM_BAUD`          | `9600`                    | Serial baud rate                                                |

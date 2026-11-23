@@ -45,11 +45,14 @@ async function call<T>(
     const json = await res.json().catch(() => null);
 
     if (res.ok) return { ok: true, data: json as T };
-    return {
-      ok: false,
-      status: res.status,
-      message: json?.message ?? `The server answered HTTP ${res.status}.`,
-    };
+
+    // A JSON error from the gateway explains itself; anything else (an HTML
+    // 404 page, a proxy error) means the address doesn't reach the gateway API
+    const message =
+      json && typeof json.message === 'string'
+        ? json.message
+        : `HTTP ${res.status} from ${base}${path}. Check the server address: it should be the gateway's website, e.g. ${DEFAULT_SERVER}`;
+    return { ok: false, status: res.status, message };
   } catch {
     return { ok: false, status: 0, message: `Cannot reach ${base}. Check the address and your connection.` };
   }
