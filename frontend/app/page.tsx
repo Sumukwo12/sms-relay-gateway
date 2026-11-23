@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import IntegrationDemo from "./components/integration-demo";
 import PostmanUrl from "./components/postman-url";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "./lib/site";
 import {
   BadgeCheck,
   Code2,
@@ -104,9 +106,58 @@ const FEATURES = [
   },
 ];
 
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  // Nested metadata objects replace the layout's, so repeat them in full
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    locale: "en_KE",
+  },
+};
+
+// Structured data so search engines understand what the site offers
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: SITE_NAME,
+      description: SITE_DESCRIPTION,
+      inLanguage: "en",
+    },
+    {
+      "@type": "WebApplication",
+      name: SITE_NAME,
+      url: `${SITE_URL}/`,
+      description: SITE_DESCRIPTION,
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Web, Android",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "KES" },
+      featureList: [
+        "Send OTP verification codes by SMS",
+        "Send SMS notifications from your website",
+        "Uses your own Android phone and SIM",
+        "Delivery webhooks",
+        "Test API keys",
+      ],
+    },
+  ],
+};
+
 export default function Home() {
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 font-sans text-zinc-900 dark:bg-black dark:text-zinc-100">
+      <script
+        type="application/ld+json"
+        // Static data defined above, not user input
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD).replace(/</g, "\\u003c") }}
+      />
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-5 sm:px-8">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white">
@@ -252,7 +303,7 @@ export default function Home() {
               <p className="mt-4 text-xs text-zinc-500">
                 Examples in curl, PHP, Node.js and Python are in the dashboard; the full API is at{" "}
                 <a href="/openapi.json" className="font-medium text-emerald-700 underline dark:text-emerald-400">
-                  /openapi.json
+                  OpenAPI specification
                 </a>{" "}
                 (import it into Postman).
               </p>
@@ -354,8 +405,36 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="py-6 text-center text-xs text-zinc-500">
-        SMS are sent from members&apos; own phones and SIMs. Follow your carrier&apos;s terms and local messaging rules.
+      <footer className="border-t border-zinc-200 dark:border-zinc-800">
+        <div className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-8 text-sm sm:grid-cols-3 sm:px-8">
+          <div>
+            <p className="font-semibold">{SITE_NAME}</p>
+            <p className="mt-2 text-xs text-zinc-500">
+              Your own SMS gateway for OTP codes and notifications, running on your Android phone.
+            </p>
+          </div>
+          <nav aria-label="Product">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Product</p>
+            <ul className="mt-2 space-y-1.5">
+              <li><a href="#how" className="hover:underline">How the SMS gateway works</a></li>
+              <li><a href="#simulation" className="hover:underline">Phone verification demo</a></li>
+              <li><a href="#why" className="hover:underline">Why use your own phone</a></li>
+            </ul>
+          </nav>
+          <nav aria-label="Developers">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Developers</p>
+            <ul className="mt-2 space-y-1.5">
+              <li><a href="#developers" className="hover:underline">API credentials and integration</a></li>
+              <li><a href="#postman" className="hover:underline">Test the API with Postman</a></li>
+              <li><a href="/openapi.json" className="hover:underline">OpenAPI specification (JSON)</a></li>
+              <li><Link href="/register" className="hover:underline">Get a free API key</Link></li>
+              <li><Link href="/login" className="hover:underline">Sign in to your dashboard</Link></li>
+            </ul>
+          </nav>
+        </div>
+        <p className="pb-6 text-center text-xs text-zinc-500">
+          SMS are sent from members&apos; own phones and SIMs. Follow your carrier&apos;s terms and local messaging rules.
+        </p>
       </footer>
     </div>
   );

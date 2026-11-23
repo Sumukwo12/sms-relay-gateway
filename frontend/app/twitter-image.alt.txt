@@ -1,0 +1,1 @@
+SMS Gateway: your own SMS gateway on your own phone. Send OTP codes and SMS from your website through your Android phone and SIM.
