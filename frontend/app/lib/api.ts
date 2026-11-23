@@ -64,7 +64,8 @@ export async function request<T>(path: string, init?: RequestInit): Promise<Resu
       error: {
         success: false,
         error: "network_error",
-        message: `Cannot reach the gateway server at ${API_URL || "this site"}.`,
+        message:
+          "Couldn't reach the server. It may be restarting or your connection dropped; try again in a few seconds.",
       },
     };
   }
