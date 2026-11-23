@@ -35,12 +35,30 @@ defmodule Backend.AccountsTest do
       assert {:ok, %User{role: "admin"}} = Accounts.ensure_admin()
     end
 
-    test "promotes an existing account without changing its password" do
-      {:ok, _} = Accounts.register(%{email: "boss@example.com", password: "their own password"})
+    test "promotes an existing account and gives it the configured password" do
+      {:ok, user} =
+        Accounts.register(%{email: "boss@example.com", password: "their own password"})
+
+      token = Accounts.create_session(user)
       Application.put_env(:backend, :admin, {"boss@example.com", "configured password"})
 
       assert {:ok, %User{role: "admin", status: "approved"}} = Accounts.ensure_admin()
-      assert {:ok, _} = Accounts.authenticate("boss@example.com", "their own password")
+      assert {:ok, _} = Accounts.authenticate("boss@example.com", "configured password")
+
+      assert {:error, :invalid_credentials} =
+               Accounts.authenticate("boss@example.com", "their own password")
+
+      # The password changed, so old sessions end
+      assert Accounts.get_user_by_session(token) == nil
+    end
+
+    test "un-suspends the configured admin" do
+      user = user_fixture(email: "boss@example.com")
+      {:ok, _} = Accounts.admin_update_user(user, %{status: "suspended"})
+      Application.put_env(:backend, :admin, {"boss@example.com", password()})
+
+      assert {:ok, %User{role: "admin", status: "approved"}} = Accounts.ensure_admin()
+      assert {:ok, _} = Accounts.authenticate("boss@example.com", password())
     end
   end
 

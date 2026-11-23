@@ -51,10 +51,13 @@ defmodule Backend.Accounts do
   end
 
   @doc """
-  Make sure the server's admin account exists: `config :backend, admin:
-  {email, password}` (`ADMIN_EMAIL` / `ADMIN_PASSWORD`). Creates it, or turns
-  an existing account with that email into an approved admin (its password
-  is left alone). Does nothing when not configured.
+  Make sure the server's admin account exists and can sign in:
+  `config :backend, admin: {email, password}` (`ADMIN_EMAIL` /
+  `ADMIN_PASSWORD`). Creates the account, or makes an existing account with
+  that email an approved admin. While `ADMIN_PASSWORD` is set it is the
+  admin's password: it is applied at every start (so a forgotten password is
+  fixed by a restart). Remove it from the server's `.env` once you have set
+  your own password in the dashboard. Always logs what it did.
   """
   def ensure_admin do
     case Application.get_env(:backend, :admin) do
@@ -65,7 +68,7 @@ defmodule Backend.Accounts do
           nil ->
             case register(%{email: email, password: password, name: "Admin"}) do
               {:ok, user} ->
-                promote_admin(user)
+                make_admin(user, password, "created")
 
               {:error, errors} ->
                 Logger.error(
@@ -76,21 +79,38 @@ defmodule Backend.Accounts do
                 {:error, errors}
             end
 
-          %User{role: "admin", status: "approved"} = user ->
-            {:ok, user}
-
           user ->
-            promote_admin(user)
+            make_admin(user, password, "updated")
         end
 
       _ ->
+        Logger.info("[Accounts] ADMIN_EMAIL/ADMIN_PASSWORD not set; no admin account managed")
         :not_configured
     end
   end
 
-  defp promote_admin(user) do
-    user = user |> Ecto.Changeset.change(role: "admin", status: "approved") |> Repo.update!()
-    Logger.info("[Accounts] #{user.email} is the server admin")
+  defp make_admin(user, password, what) do
+    changes =
+      [role: "admin", status: "approved"] ++
+        if Password.verify(password, user.password_hash),
+          do: [],
+          else: [password_hash: Password.hash(password)]
+
+    user = user |> Ecto.Changeset.change(changes) |> Repo.update!()
+
+    if Keyword.has_key?(changes, :password_hash) do
+      # A new password signs out existing sessions
+      Repo.delete_all(from(s in Session, where: s.user_id == ^user.id))
+    end
+
+    Logger.info(
+      "[Accounts] Admin #{user.email} #{what}" <>
+        if(Keyword.has_key?(changes, :password_hash),
+          do: " (password set from ADMIN_PASSWORD)",
+          else: ""
+        )
+    )
+
     {:ok, user}
   end
 
