@@ -25,16 +25,18 @@ defmodule Backend.RateLimiter do
     - `{:ok, reservation}`                     — allowed and reserved
     - `{:error, :rate_limited, retry_after}`   — blocked; seconds until slot frees up
   """
-  @spec reserve(String.t(), String.t() | nil) ::
+  @spec reserve(String.t(), String.t() | nil, String.t() | nil) ::
           {:ok, map()} | {:error, :rate_limited, non_neg_integer()}
-  def reserve(phone, ip \\ nil) when is_binary(phone) do
+  def reserve(phone, ip \\ nil, scope \\ nil) when is_binary(phone) do
     now = System.os_time(:second)
     ip_key = if ip && is_binary(ip) && ip != "", do: "ip:#{ip}", else: nil
 
+    # With a scope (a user's tenant), the per-number and hourly buckets are
+    # that user's own: other users' traffic doesn't count against them.
     buckets =
       [
-        {phone, phone_limit()},
-        {"global", global_limit()}
+        {scoped(phone, scope), phone_limit()},
+        {scoped("global", scope), global_limit()}
       ] ++ if ip_key, do: [{ip_key, ip_limit()}], else: []
 
     keys = Enum.map(buckets, &elem(&1, 0))
@@ -68,7 +70,7 @@ defmodule Backend.RateLimiter do
               "[RateLimiter] Reserved slot for #{PhoneUtils.mask(phone)} ip=#{inspect(ip)}"
             )
 
-            {:ok, %{phone: phone, ip: ip, timestamp: now}}
+            {:ok, %{phone: phone, ip: ip, timestamp: now, scope: scope}}
 
           {:error, :rate_limited, _} = err ->
             err
@@ -89,11 +91,12 @@ defmodule Backend.RateLimiter do
   Release a reserved rate limit slot if SMS delivery failed.
   """
   @spec release(map() | String.t()) :: :ok
-  def release(%{phone: phone, ip: ip, timestamp: ts}) do
+  def release(%{phone: phone, ip: ip, timestamp: ts} = reservation) do
     ip_key = if ip && is_binary(ip) && ip != "", do: "ip:#{ip}", else: nil
+    scope = reservation[:scope]
 
     keys =
-      [phone, "global"] ++ if ip_key, do: [ip_key], else: []
+      [scoped(phone, scope), scoped("global", scope)] ++ if ip_key, do: [ip_key], else: []
 
     Cachex.transaction(@cache, keys, fn _ ->
       Enum.each(keys, fn key ->
@@ -182,6 +185,40 @@ defmodule Backend.RateLimiter do
     now = System.os_time(:second)
     max(limit - length(get_live_timestamps("global", now)), 0)
   end
+
+  @doc """
+  Count one attempt against an arbitrary `key` (e.g. sign-in attempts per
+  IP) and allow at most `limit` per rolling hour.
+  """
+  @spec hit(String.t(), pos_integer()) :: :ok | {:error, :rate_limited, non_neg_integer()}
+  def hit(key, limit) when is_binary(key) do
+    now = System.os_time(:second)
+    key = "hit:" <> key
+
+    result =
+      Cachex.transaction(@cache, [key], fn _ ->
+        ts = get_live_timestamps(key, now)
+
+        if length(ts) < limit do
+          Cachex.put(@cache, key, [now | ts], ttl: @window_seconds * 1_000)
+          :ok
+        else
+          {:error, :rate_limited, max(@window_seconds - (now - Enum.min(ts)), 1)}
+        end
+      end)
+
+    case result do
+      {:ok, outcome} ->
+        outcome
+
+      {:error, reason} ->
+        Logger.error("[RateLimiter] Transaction error during hit: #{inspect(reason)}")
+        {:error, :rate_limited, 60}
+    end
+  end
+
+  defp scoped(key, nil), do: key
+  defp scoped(key, scope), do: "#{scope}|#{key}"
 
   # Only keep timestamps within the rolling window
   defp get_live_timestamps(key, now) do

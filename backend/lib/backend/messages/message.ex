@@ -38,6 +38,10 @@ defmodule Backend.Messages.Message do
     field(:sent_at, :utc_datetime_usec)
     field(:delivered_at, :utc_datetime_usec)
     field(:failed_at, :utc_datetime_usec)
+    # Owner (nil = server-level), the phone the sender picked, and the key used
+    field(:user_id, :integer)
+    field(:device_id, :integer)
+    field(:api_key_id, :integer)
 
     timestamps()
   end

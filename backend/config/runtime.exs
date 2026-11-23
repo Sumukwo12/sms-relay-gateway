@@ -79,6 +79,11 @@ if config_env() != :test do
     alert_offline_seconds: env_int.("ALERT_OFFLINE_SECONDS"),
     alert_queue_age_seconds: env_int.("ALERT_QUEUE_AGE_SECONDS"),
     alert_battery_percent: env_int.("ALERT_BATTERY_PERCENT"),
+    user_daily_send_limit: env_int.("USER_DAILY_SEND_LIMIT"),
+    admin_emails:
+      if(emails = System.get_env("ADMIN_EMAILS"),
+        do: emails |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
+      ),
     public_api_enabled:
       if(System.get_env("PUBLIC_API"), do: System.get_env("PUBLIC_API") == "true", else: nil)
   ]
@@ -139,6 +144,9 @@ if config_env() == :prod do
       """
 
   host = System.get_env("PHX_HOST") || "example.com"
+
+  # Served over HTTPS by the reverse proxy
+  config :backend, secure_cookies: true
 
   config :backend, Backend.Repo,
     database:

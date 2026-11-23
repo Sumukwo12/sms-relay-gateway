@@ -93,6 +93,11 @@ defmodule Backend.SmsGateway do
 
   With `:idempotency_key`, a repeated request returns `{:existing, message}`
   for the code already queued instead of sending a new one.
+
+  With `:user` (a `Backend.Accounts.User`), the SMS goes through that user's
+  phones, counts against their own daily and hourly limits, and `client`
+  should be their tenant (`User.client/1`). `:device_id` and `:api_key_id`
+  are recorded on the message.
   """
   @spec queue_verification_code(String.t(), String.t(), keyword()) ::
           {:ok, Backend.Messages.Message.t()}
@@ -103,14 +108,15 @@ defmodule Backend.SmsGateway do
           | {:error, {:invalid, atom(), String.t()}}
   def queue_verification_code(phone_number, client, opts \\ []) do
     key = opts[:idempotency_key]
+    user = opts[:user]
 
     # A malformed key is rejected by Messages.enqueue/3
     with nil <- if(is_binary(key), do: Messages.get_by_idempotency_key(client, key)),
          {:ok, phone} <- validate_phone(phone_number),
          code = CodeGenerator.generate(),
          body = render_message(code),
-         :ok <- check_capacity(Segments.count(body)),
-         {:ok, reservation} <- RateLimiter.reserve(phone, nil) do
+         :ok <- check_capacity(Segments.count(body), user),
+         {:ok, reservation} <- RateLimiter.reserve(phone, nil, user && client) do
       attrs = %{
         to: phone,
         body: body,
@@ -118,7 +124,9 @@ defmodule Backend.SmsGateway do
         callback_url: opts[:callback_url]
       }
 
-      enqueue_opts = [kind: "otp", ttl_seconds: code_ttl_seconds(), idempotency_key: key]
+      enqueue_opts =
+        [kind: "otp", ttl_seconds: code_ttl_seconds(), idempotency_key: key] ++
+          owner_opts(opts)
 
       # Queue first, then store the code: if a racing duplicate request won,
       # the code its SMS carries must stay the valid one.
@@ -140,6 +148,57 @@ defmodule Backend.SmsGateway do
       %Messages.Message{} = existing -> {:existing, existing}
       error -> error
     end
+  end
+
+  @doc """
+  Queue a notification SMS (`params`: `to`, `body`, `reference?`,
+  `callback_url?`) for `client`. Same owner options as
+  `queue_verification_code/3`, plus `:idempotency_key`.
+  """
+  @spec queue_message(String.t(), map(), keyword()) ::
+          {:ok, Backend.Messages.Message.t()}
+          | {:existing, Backend.Messages.Message.t()}
+          | {:error, :daily_limit_reached}
+          | {:error, {:invalid, atom(), String.t()}}
+  def queue_message(client, params, opts \\ []) do
+    key = opts[:idempotency_key]
+
+    cond do
+      existing = is_binary(key) && Messages.get_by_idempotency_key(client, key) ->
+        {:existing, existing}
+
+      check_capacity(body_segments(params), opts[:user]) != :ok ->
+        {:error, :daily_limit_reached}
+
+      true ->
+        case Messages.enqueue(client, params, [idempotency_key: key] ++ owner_opts(opts)) do
+          {:ok, message} ->
+            Outbox.kick()
+            {:ok, message}
+
+          {:existing, message} ->
+            {:existing, message}
+
+          {:error, field, reason} ->
+            {:error, {:invalid, field, reason}}
+        end
+    end
+  end
+
+  # Invalid bodies are rejected by Messages.enqueue/3; count them as one part
+  defp body_segments(params) do
+    case Map.get(params, "body") || Map.get(params, :body) do
+      body when is_binary(body) -> Segments.count(String.trim(body))
+      _ -> 1
+    end
+  end
+
+  defp owner_opts(opts) do
+    [
+      user_id: opts[:user] && opts[:user].id,
+      device_id: opts[:device_id],
+      api_key_id: opts[:api_key_id]
+    ]
   end
 
   @doc """
@@ -216,8 +275,8 @@ defmodule Backend.SmsGateway do
 
   defp store_code(client, phone, code), do: CodeStore.put(client, phone, code, code_ttl_seconds())
 
-  defp check_capacity(segments) do
-    if Outbox.capacity_available?(segments), do: :ok, else: {:error, :daily_limit_reached}
+  defp check_capacity(segments, user \\ nil) do
+    if Outbox.capacity_available?(segments, user), do: :ok, else: {:error, :daily_limit_reached}
   end
 
   defp render_message(code) do

@@ -24,7 +24,8 @@ defmodule Backend.Janitor do
   @spec run() :: %{
           codes: non_neg_integer(),
           messages: non_neg_integer(),
-          webhooks: non_neg_integer()
+          webhooks: non_neg_integer(),
+          sessions: non_neg_integer()
         }
   def run do
     cutoff = DateTime.add(DateTime.utc_now(), -retention_days() * 86_400, :second)
@@ -32,7 +33,8 @@ defmodule Backend.Janitor do
     result = %{
       codes: CodeStore.purge_expired(),
       messages: Messages.purge_finished_before(cutoff),
-      webhooks: Webhooks.purge_finished_before(cutoff)
+      webhooks: Webhooks.purge_finished_before(cutoff),
+      sessions: Backend.Accounts.purge_expired_sessions()
     }
 
     if result.messages > 0 or result.webhooks > 0 do

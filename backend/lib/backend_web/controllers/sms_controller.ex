@@ -18,7 +18,7 @@ defmodule BackendWeb.SmsController do
   # POST /api/send-code
   # Body: { "phone": "+254712345678" }
   def send_code(conn, %{"phone" => phone}) when is_binary(phone) do
-    client_ip = get_client_ip(conn)
+    client_ip = BackendWeb.ClientIp.get(conn)
 
     case SmsGateway.send_verification_code(phone, client_ip: client_ip) do
       {:ok, :sent} ->
@@ -59,7 +59,7 @@ defmodule BackendWeb.SmsController do
           conn,
           :service_unavailable,
           "modem_disconnected",
-          "SMS modem is not connected. Please check the hardware."
+          "The SMS gateway phone is offline. Please try again shortly."
         )
 
       {:error, :modem_busy} ->
@@ -165,31 +165,4 @@ defmodule BackendWeb.SmsController do
     |> put_status(status)
     |> json(Map.merge(%{success: false, error: code, message: message}, extra))
   end
-
-  defp get_client_ip(conn) do
-    trust_proxy = Application.get_env(:backend, :trust_proxy, false)
-
-    if trust_proxy do
-      case get_req_header(conn, "x-forwarded-for") do
-        [header | _] ->
-          header
-          |> String.split(",")
-          |> Enum.map(&String.trim/1)
-          |> Enum.reject(&(&1 == ""))
-          |> List.last() || format_ip(conn.remote_ip)
-
-        [] ->
-          format_ip(conn.remote_ip)
-      end
-    else
-      format_ip(conn.remote_ip)
-    end
-  end
-
-  defp format_ip(ip) when is_tuple(ip) do
-    ip |> :inet.ntoa() |> to_string()
-  end
-
-  defp format_ip(ip) when is_binary(ip), do: ip
-  defp format_ip(_), do: "unknown"
 end

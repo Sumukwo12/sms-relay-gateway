@@ -43,8 +43,10 @@ defmodule BackendWeb.Endpoint do
   # Must run before the router so preflight OPTIONS requests are answered.
   plug CORSPlug,
     origin: &__MODULE__.cors_origins/0,
-    methods: ["GET", "POST", "OPTIONS"],
-    headers: ["Content-Type", "Authorization", "Accept"]
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    headers: ["Content-Type", "Authorization", "Accept", "Idempotency-Key", "X-Api-Key"],
+    # The dashboard signs in with a cookie; in development it runs on another port
+    credentials: true
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],

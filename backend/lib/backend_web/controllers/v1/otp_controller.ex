@@ -10,15 +10,24 @@ defmodule BackendWeb.V1.OtpController do
   use BackendWeb, :controller
 
   alias Backend.{Messages, SmsGateway}
-  alias BackendWeb.V1.{Errors, Idempotency}
+  alias BackendWeb.V1.{Errors, Idempotency, Owner}
 
   def send_code(conn, %{"phone" => phone} = params) when is_binary(phone) do
-    opts = [
-      reference: params["reference"],
-      callback_url: params["callback_url"],
-      idempotency_key: Idempotency.key(conn, params)
-    ]
+    with {:ok, owner_opts} <- Owner.opts(conn, params) do
+      opts =
+        [
+          reference: params["reference"],
+          callback_url: params["callback_url"],
+          idempotency_key: Idempotency.key(conn, params)
+        ] ++ owner_opts
 
+      queue_code(conn, phone, opts)
+    end
+  end
+
+  def send_code(conn, _params), do: Errors.invalid(conn, :phone, "is required")
+
+  defp queue_code(conn, phone, opts) do
     case SmsGateway.queue_verification_code(phone, conn.assigns.api_client, opts) do
       {:ok, message} ->
         conn
@@ -54,8 +63,6 @@ defmodule BackendWeb.V1.OtpController do
         Errors.daily_limit(conn)
     end
   end
-
-  def send_code(conn, _params), do: Errors.invalid(conn, :phone, "is required")
 
   def verify(conn, %{"phone" => phone, "code" => code})
       when is_binary(phone) and is_binary(code) do

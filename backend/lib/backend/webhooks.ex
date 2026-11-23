@@ -8,8 +8,9 @@ defmodule Backend.Webhooks do
       {"event": "message.delivered", "message": {...same shape as GET /v1/messages/:id...}}
 
   The request carries `X-Signature: sha256=<hex>`, an HMAC-SHA256 of the raw
-  body keyed with the sending system's API key, so the receiver can check it
-  came from this gateway.
+  body keyed with the sending system's API key (server keys) or the account's
+  webhook secret (user keys, shown in the dashboard), so the receiver can
+  check it came from this gateway.
 
   Deliveries are stored in SQLite (`webhook_deliveries`) and sent by this
   process, so they survive restarts and receiver outages. They are retried
@@ -23,7 +24,7 @@ defmodule Backend.Webhooks do
   import Ecto.Query
   require Logger
 
-  alias Backend.{ApiKeys, Messages, Repo}
+  alias Backend.{Accounts, ApiKeys, Messages, Repo}
   alias Backend.Messages.Message
 
   defmodule Delivery do
@@ -203,7 +204,8 @@ defmodule Backend.Webhooks do
   end
 
   defp post(delivery) do
-    secret = ApiKeys.key_for(delivery.client)
+    secret =
+      ApiKeys.key_for(delivery.client) || Accounts.webhook_secret_for_client(delivery.client)
 
     headers =
       [{"content-type", "application/json"}] ++

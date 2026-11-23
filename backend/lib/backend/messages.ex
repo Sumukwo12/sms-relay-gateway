@@ -26,7 +26,9 @@ defmodule Backend.Messages do
 
   Attrs (string or atom keys): `to`, `body`, and optionally `reference`,
   `callback_url`. Options: `:kind` (`"notification"` | `"otp"`),
-  `:ttl_seconds` (how long it may wait in the queue) and `:idempotency_key`.
+  `:ttl_seconds` (how long it may wait in the queue), `:idempotency_key`,
+  and the owner: `:user_id` (nil = server-level), `:device_id` (send through
+  this phone only) and `:api_key_id`.
 
   Returns `{:ok, message}`, `{:existing, message}` when `client` already
   queued a message with the same idempotency key (nothing new is queued), or
@@ -58,7 +60,10 @@ defmodule Backend.Messages do
         callback_url: callback_url,
         idempotency_key: key,
         next_attempt_at: now,
-        expires_at: DateTime.add(now, ttl, :second)
+        expires_at: DateTime.add(now, ttl, :second),
+        user_id: opts[:user_id],
+        device_id: opts[:device_id],
+        api_key_id: opts[:api_key_id]
       }
 
       insert_new(message)
@@ -126,36 +131,78 @@ defmodule Backend.Messages do
   @doc "Fetch a message by id (any client)."
   def get(id) when is_binary(id), do: Repo.get(Message, id)
 
+  # Counters below take a scope: `:system` (server-level messages, user_id
+  # nil — the default, as before accounts existed), a user id, or `:all`.
+
   @doc "Messages waiting to be sent."
-  @spec queue_depth() :: non_neg_integer()
-  def queue_depth do
-    Repo.aggregate(from(m in Message, where: m.status in ["queued", "sending"]), :count)
+  @spec queue_depth(scope()) :: non_neg_integer()
+  def queue_depth(scope \\ :system) do
+    from(m in Message, where: m.status in ["queued", "sending"])
+    |> scoped(scope)
+    |> Repo.aggregate(:count)
   end
 
   @doc "SMS parts waiting to be sent (for the daily cap)."
-  @spec queued_segments() :: non_neg_integer()
-  def queued_segments do
-    Repo.aggregate(from(m in Message, where: m.status in ["queued", "sending"]), :sum, :segments) ||
-      0
+  @spec queued_segments(scope()) :: non_neg_integer()
+  def queued_segments(scope \\ :system) do
+    from(m in Message, where: m.status in ["queued", "sending"])
+    |> scoped(scope)
+    |> Repo.aggregate(:sum, :segments) || 0
   end
 
   @doc """
   SMS parts that left the phone in the last 24 hours (for the daily cap).
   A long message counts once per part, as the SMS bundle charges it.
   """
-  @spec sent_last_24h() :: non_neg_integer()
-  def sent_last_24h do
+  @spec sent_last_24h(scope()) :: non_neg_integer()
+  def sent_last_24h(scope \\ :system) do
     since = DateTime.add(now(), -86_400, :second)
-    Repo.aggregate(from(m in Message, where: m.sent_at > ^since), :sum, :segments) || 0
+
+    from(m in Message, where: m.sent_at > ^since)
+    |> scoped(scope)
+    |> Repo.aggregate(:sum, :segments) || 0
+  end
+
+  @doc "SMS parts each user sent in the last 24 hours, as `%{user_id => parts}`."
+  @spec sent_by_user_last_24h() :: %{pos_integer() => non_neg_integer()}
+  def sent_by_user_last_24h do
+    since = DateTime.add(now(), -86_400, :second)
+
+    from(m in Message,
+      where: m.sent_at > ^since and not is_nil(m.user_id),
+      group_by: m.user_id,
+      select: {m.user_id, sum(m.segments)}
+    )
+    |> Repo.all()
+    |> Map.new()
   end
 
   @doc "When the oldest message still waiting to be sent was queued, or nil."
-  @spec oldest_queued_at() :: DateTime.t() | nil
-  def oldest_queued_at do
-    Repo.one(
-      from(m in Message, where: m.status in ["queued", "sending"], select: min(m.inserted_at))
-    )
+  @spec oldest_queued_at(scope()) :: DateTime.t() | nil
+  def oldest_queued_at(scope \\ :system) do
+    from(m in Message, where: m.status in ["queued", "sending"], select: min(m.inserted_at))
+    |> scoped(scope)
+    |> Repo.one()
   end
+
+  @doc "A user's most recent messages, newest first."
+  @spec list_for_user(pos_integer(), pos_integer()) :: [Message.t()]
+  def list_for_user(user_id, limit \\ 100) do
+    from(m in Message,
+      where: m.user_id == ^user_id,
+      order_by: [desc: m.inserted_at],
+      limit: ^limit
+    )
+    |> Repo.all()
+  end
+
+  @type scope :: :system | :all | pos_integer()
+
+  defp scoped(query, :all), do: query
+  defp scoped(query, :system), do: where(query, [m], is_nil(m.user_id))
+
+  defp scoped(query, user_id) when is_integer(user_id),
+    do: where(query, [m], m.user_id == ^user_id)
 
   @doc "JSON-friendly view of a message. Never includes the body."
   @spec to_public(Message.t()) :: map()
@@ -169,6 +216,7 @@ defmodule Backend.Messages do
       error: m.last_error,
       reference: m.reference,
       segments: m.segments,
+      device_id: m.device_id,
       created_at: m.inserted_at,
       sent_at: m.sent_at,
       delivered_at: m.delivered_at,
@@ -182,9 +230,15 @@ defmodule Backend.Messages do
   @doc """
   Claim the oldest due message for sending: marks it `sending` and counts an
   attempt. Returns `nil` when nothing is due.
+
+  `routing` limits it to messages that can go out now:
+  `%{owners: :any | %{users: MapSet, system: boolean}, blocked: [user_id], system_ok: boolean}`
+  — owners with a phone online, minus users who may not send (not approved
+  or over their daily limit); `system_ok` is false once the server-level
+  daily cap is reached. `:any` (the default) takes any due message.
   """
-  @spec checkout_next() :: Message.t() | nil
-  def checkout_next do
+  @spec checkout_next(:any | map()) :: Message.t() | nil
+  def checkout_next(routing \\ :any) do
     now = now()
 
     query =
@@ -193,6 +247,7 @@ defmodule Backend.Messages do
         order_by: [asc: m.inserted_at],
         limit: 1
       )
+      |> routed(routing)
 
     with %Message{} = message <- Repo.one(query),
          {1, _} <-
@@ -205,6 +260,21 @@ defmodule Backend.Messages do
       # Nothing due, or a phone report changed the message under us
       _ -> nil
     end
+  end
+
+  defp routed(query, :any), do: query
+
+  defp routed(query, %{owners: owners, blocked: blocked, system_ok: system_ok}) do
+    system? = system_ok and (owners == :any or owners.system)
+
+    users =
+      case owners do
+        :any -> dynamic([m], not is_nil(m.user_id) and m.user_id not in ^blocked)
+        %{users: ids} -> dynamic([m], m.user_id in ^(MapSet.to_list(ids) -- blocked))
+      end
+
+    condition = if system?, do: dynamic([m], is_nil(m.user_id) or ^users), else: users
+    where(query, ^condition)
   end
 
   @doc "When the next queued message becomes due, or nil if none are waiting."

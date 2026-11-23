@@ -68,6 +68,34 @@ defmodule Backend.Modem do
   @spec status() :: status()
   def status, do: adapter().status()
 
+  @doc """
+  Status for one user's messages. Only the SMS Relay phone adapter sends per
+  user; the single-device adapters answer for everyone.
+  """
+  @spec status(pos_integer() | nil) :: status()
+  def status(nil), do: status()
+
+  def status(user_id) do
+    adapter = adapter()
+
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :status, 1),
+      do: adapter.status(user_id),
+      else: adapter.status()
+  end
+
+  @doc """
+  Whose messages can be sent right now: `:any` for single-device adapters,
+  or `%{users: MapSet.t(), system: boolean}` for SMS Relay phones.
+  """
+  @spec available_owners() :: :any | %{users: MapSet.t(), system: boolean()}
+  def available_owners do
+    adapter = adapter()
+
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :available_owners, 0),
+      do: adapter.available_owners(),
+      else: :any
+  end
+
   @doc "The configured adapter module."
   @spec adapter() :: module()
   def adapter, do: Application.get_env(:backend, :modem_adapter, Backend.Modem.Mock)

@@ -3,17 +3,22 @@ defmodule Backend.Outbox do
   Sends queued messages (`Backend.Messages`) through the modem, strictly one
   at a time.
 
-  It wakes up when a message is enqueued (`kick/0`), when the phone
+  It wakes up when a message is enqueued (`kick/0`), when a phone
   reconnects, and every `:outbox_poll_ms` to pick up retries and expire
-  messages that waited too long. While the phone is offline, messages stay
-  queued and are not charged an attempt. Sending also pauses once
-  `:daily_send_limit` SMS parts have gone out in the last 24 hours.
+  messages that waited too long.
+
+  Each message goes through its owner's phone. Only messages whose owner can
+  send right now are picked: a phone is online, the user is approved and
+  under their daily limit (`Backend.Accounts.daily_limit/1`). Server-level
+  messages pause once `:daily_send_limit` SMS parts have gone out in the
+  last 24 hours. Messages that can't go out stay queued, uncharged.
   """
 
   use GenServer
   require Logger
 
-  alias Backend.{Messages, Modem}
+  alias Backend.{Accounts, Messages, Modem}
+  alias Backend.Accounts.User
 
   # How long to wait before retrying when the phone is offline or busy
   @offline_retry_seconds 10
@@ -32,18 +37,25 @@ defmodule Backend.Outbox do
   @doc "Synchronously send every due message. Returns how many were attempted."
   def drain(timeout \\ 60_000), do: GenServer.call(__MODULE__, :drain, timeout)
 
-  @doc "Whether the rolling 24h send cap has been reached."
+  @doc "Whether the server-level rolling 24h send cap has been reached."
   @spec daily_limit_reached?() :: boolean()
   def daily_limit_reached?, do: Messages.sent_last_24h() >= daily_limit()
 
   @doc """
   Whether a message of `segments` SMS parts can be accepted without
   overrunning the daily cap, counting both the parts sent in the last 24h and
-  the parts still queued.
+  the parts still queued: the server-level cap, or the user's own.
   """
-  @spec capacity_available?(pos_integer()) :: boolean()
-  def capacity_available?(segments \\ 1),
+  @spec capacity_available?(pos_integer(), User.t() | nil) :: boolean()
+  def capacity_available?(segments \\ 1, user \\ nil)
+
+  def capacity_available?(segments, nil),
     do: Messages.sent_last_24h() + Messages.queued_segments() + segments <= daily_limit()
+
+  def capacity_available?(segments, %User{} = user),
+    do:
+      Messages.sent_last_24h(user.id) + Messages.queued_segments(user.id) + segments <=
+        Accounts.daily_limit(user)
 
   @doc "The configured rolling 24h send cap, in SMS parts."
   def daily_limit, do: Application.get_env(:backend, :daily_send_limit, 500)
@@ -102,51 +114,63 @@ defmodule Backend.Outbox do
   end
 
   defp process_due(state, count \\ 0) do
-    cond do
-      daily_limit_reached?() ->
-        unless state.limit_logged? do
-          Logger.warning(
-            "[Outbox] Daily send limit (#{daily_limit()}) reached; pausing until it frees up"
-          )
-        end
+    routing = routing()
+    state = log_system_limit(state, routing.system_ok)
 
-        {count, %{state | limit_logged?: true}}
-
-      message = Messages.checkout_next() ->
-        case deliver(message) do
-          :continue -> process_due(%{state | limit_logged?: false}, count + 1)
-          :stop -> {count + 1, state}
-        end
-
-      true ->
+    case Messages.checkout_next(routing) do
+      nil ->
         {count, state}
+
+      message ->
+        deliver(message)
+        process_due(state, count + 1)
     end
   end
 
-  # Returns :continue to try the next message, or :stop when the modem is
-  # unavailable and the rest of the queue would fail the same way.
+  # Recomputed for every message: phones come and go, and limits fill up
+  defp routing do
+    %{
+      owners: Modem.available_owners(),
+      blocked: Accounts.blocked_user_ids(Messages.sent_by_user_last_24h()),
+      system_ok: not daily_limit_reached?()
+    }
+  end
+
+  defp log_system_limit(%{limit_logged?: false} = state, false) do
+    Logger.warning(
+      "[Outbox] Daily send limit (#{daily_limit()}) reached; pausing server-level messages until it frees up"
+    )
+
+    %{state | limit_logged?: true}
+  end
+
+  defp log_system_limit(state, true), do: %{state | limit_logged?: false}
+  defp log_system_limit(state, false), do: state
+
+  # A phone that went away between routing and sending just defers this
+  # message; other owners' messages keep going.
   defp deliver(message) do
     case send_sms(message) do
       :ok ->
         Messages.mark_sent(message)
-        :continue
 
       {:error, :modem_disconnected} ->
         Messages.defer(message, :modem_disconnected, @offline_retry_seconds)
-        :stop
 
       {:error, :modem_busy} ->
         Messages.defer(message, :modem_busy, @busy_retry_seconds)
-        :stop
 
       {:error, reason} ->
         Messages.attempt_failed(message, reason)
-        :continue
     end
   end
 
   defp send_sms(message) do
-    Modem.send_sms(message.to, message.body, id: message.id)
+    Modem.send_sms(message.to, message.body,
+      id: message.id,
+      user_id: message.user_id,
+      device_id: message.device_id
+    )
   catch
     :exit, {:timeout, _} -> {:error, :send_timeout}
     :exit, {:noproc, _} -> {:error, :modem_disconnected}

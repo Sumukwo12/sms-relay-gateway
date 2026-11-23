@@ -14,6 +14,8 @@ config :backend,
   monitor_interval_ms: nil,
   janitor_interval_ms: nil,
   run_migrations_on_boot: false,
+  # Fast password hashing in tests
+  password_iterations: 1_000,
   api_keys: %{"test_system" => "test-api-key", "other_system" => "other-api-key"},
   # Webhooks go to a Req.Test stub instead of the network
   webhook_req_options: [plug: {Req.Test, Backend.Webhooks}, retry: false]

@@ -97,7 +97,17 @@ config :backend,
   alert_queue_age_seconds: 600,
   alert_battery_percent: 20,
   # Longer than the relay app's own 30s send timeout, so its answer arrives first
-  phone_send_timeout_ms: 40_000
+  phone_send_timeout_ms: 40_000,
+
+  # ── Accounts ──────────────────────────────────────────────────────────────
+  # SMS parts each user may send per rolling 24h through their own phones,
+  # unless an admin sets a limit for them. Env: USER_DAILY_SEND_LIMIT
+  user_daily_send_limit: 200,
+  # Emails that become approved admins when they sign up (the first account
+  # ever registered always does). Env: ADMIN_EMAILS="a@x.com,b@y.com"
+  admin_emails: [],
+  # Mark the session cookie Secure (on in prod, behind HTTPS)
+  secure_cookies: false
 
 config :backend, Backend.Repo, journal_mode: :wal
 
