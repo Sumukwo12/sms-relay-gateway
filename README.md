@@ -6,11 +6,11 @@ you already own, instead of paying a provider like Twilio for every message.
 
 | | |
 | --- | --- |
-| 🌐 **Live site** | [sms.strand.co.ke](https://sms.strand.co.ke) |
-| 📱 **Android app** | [Download SMS Relay 1.2.0 (APK, 71 MB)](https://sms.strand.co.ke/downloads/sms-relay.apk) · also in this repo: [`frontend/public/downloads/sms-relay.apk`](frontend/public/downloads/sms-relay.apk) |
-| 📘 **API spec** | [OpenAPI 3.1 (`/openapi.json`)](https://sms.strand.co.ke/openapi.json), importable into Postman |
-| 🧪 **Try it** | [Interactive demo](https://sms.strand.co.ke/#simulation) · [Postman guide](https://sms.strand.co.ke/#postman) |
-| 🧑‍💻 **Source** | [github.com/Sumukwo12/sms-phone-verification](https://github.com/Sumukwo12/sms-phone-verification) |
+| **Live site** | [sms.strand.co.ke](https://sms.strand.co.ke) |
+| **Android app** | [Download SMS Relay 1.2.0 (APK, 71 MB)](https://sms.strand.co.ke/downloads/sms-relay.apk) · also in this repo: [`frontend/public/downloads/sms-relay.apk`](frontend/public/downloads/sms-relay.apk) |
+| **API spec** | [OpenAPI 3.1 (`/openapi.json`)](https://sms.strand.co.ke/openapi.json), importable into Postman |
+| **Try it** | [Interactive demo](https://sms.strand.co.ke/#simulation) · [Postman guide](https://sms.strand.co.ke/#postman) |
+| **Source** | [github.com/Sumukwo12/sms-phone-verification](https://github.com/Sumukwo12/sms-phone-verification) |
 
 ## How it works
 
