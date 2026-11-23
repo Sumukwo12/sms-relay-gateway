@@ -7,10 +7,15 @@ defmodule Backend.PhoneUtils do
   Normalize a phone number to E.164: strips spaces, dashes, dots and
   parentheses ("+254 712-345 678" → "+254712345678"), then requires
   +<country code><subscriber>, 8-15 digits in total.
+
+  Numbers written the local way are completed with the default country code
+  (`:default_country_code`, "254" for Kenya; env `DEFAULT_COUNTRY_CODE`):
+  "0712345678", "712345678", "254712345678" and "00254712345678" all become
+  "+254712345678".
   """
   @spec normalize(term()) :: {:ok, String.t()} | {:error, :invalid_phone}
   def normalize(phone) when is_binary(phone) do
-    cleaned = String.replace(phone, ~r/[\s\-().]/, "")
+    cleaned = phone |> String.replace(~r/[\s\-().]/, "") |> complete_country_code()
 
     if Regex.match?(~r/^\+[1-9]\d{7,14}$/, cleaned),
       do: {:ok, cleaned},
@@ -18,6 +23,24 @@ defmodule Backend.PhoneUtils do
   end
 
   def normalize(_), do: {:error, :invalid_phone}
+
+  defp complete_country_code("+" <> _ = number), do: number
+  defp complete_country_code("00" <> rest), do: "+" <> rest
+
+  defp complete_country_code(number) do
+    cc = Application.get_env(:backend, :default_country_code, "254")
+
+    cond do
+      not Regex.match?(~r/^\d+$/, number) or cc in [nil, ""] -> number
+      # 0712345678 (national trunk prefix)
+      String.starts_with?(number, "0") -> "+" <> cc <> String.trim_leading(number, "0")
+      # 254712345678 (country code without the +)
+      String.starts_with?(number, cc) and byte_size(number) > 10 -> "+" <> number
+      # 712345678 (subscriber number only)
+      byte_size(number) in 7..10 -> "+" <> cc <> number
+      true -> number
+    end
+  end
 
   @doc """
   Masks a phone number for safe logging, preserving country code and last 3 digits.

@@ -33,6 +33,7 @@ export type ApiKey = {
   id: number;
   name: string;
   prefix: string;
+  mode: "live" | "test";
   last_used_at: string | null;
   created_at: string;
 };
@@ -54,11 +55,14 @@ export type Message = {
   delivered_at: string | null;
   failed_at: string | null;
   expires_at: string;
+  test: boolean;
 };
 
 export type Overview = {
   user: User;
   webhook_secret: string;
+  webhook_url: string | null;
+  otp_template: string | null;
   usage: { sent_last_24h: number; queued: number; daily_limit: number };
   gateway_online: boolean;
   devices: Device[];
@@ -114,8 +118,14 @@ export const removeDevice = (id: number) =>
 
 export const getApiKeys = () => request<{ api_keys: ApiKey[] }>("/api/account/api-keys");
 
-export const createApiKey = (name: string) =>
-  request<{ api_key: ApiKey; key: string }>("/api/account/api-keys", post({ name }));
+export const createApiKey = (name: string, mode: "live" | "test" = "live") =>
+  request<{ api_key: ApiKey; key: string }>("/api/account/api-keys", post({ name, mode }));
+
+export const updateSettings = (settings: { webhook_url?: string; otp_template?: string }) =>
+  request<{ webhook_url: string | null; otp_template: string | null }>(
+    "/api/account/settings",
+    patch(settings),
+  );
 
 export const revokeApiKey = (id: number) =>
   request<{ success: true }>(`/api/account/api-keys/${id}`, del());

@@ -42,6 +42,9 @@ defmodule Backend.Messages.Message do
     field(:user_id, :integer)
     field(:device_id, :integer)
     field(:api_key_id, :integer)
+    # Simulated by a test key (never sent); test_code is returned to test keys only
+    field(:test, :boolean, default: false)
+    field(:test_code, :string, virtual: true)
 
     timestamps()
   end

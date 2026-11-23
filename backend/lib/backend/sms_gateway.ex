@@ -109,14 +109,17 @@ defmodule Backend.SmsGateway do
   def queue_verification_code(phone_number, client, opts \\ []) do
     key = opts[:idempotency_key]
     user = opts[:user]
+    test? = opts[:test] == true
 
     # A malformed key is rejected by Messages.enqueue/3
     with nil <- if(is_binary(key), do: Messages.get_by_idempotency_key(client, key)),
+         {:ok, otp} <- otp_options(opts),
          {:ok, phone} <- validate_phone(phone_number),
-         code = CodeGenerator.generate(),
-         body = render_message(code),
-         :ok <- check_capacity(Segments.count(body), user),
-         {:ok, reservation} <- RateLimiter.reserve(phone, nil, user && client) do
+         code = CodeGenerator.generate(otp.length),
+         body = render_template(otp.template, code, otp.ttl),
+         :ok <- if(test?, do: :ok, else: check_capacity(Segments.count(body), user)),
+         {:ok, reservation} <-
+           if(test?, do: {:ok, nil}, else: RateLimiter.reserve(phone, nil, user && client)) do
       attrs = %{
         to: phone,
         body: body,
@@ -125,16 +128,22 @@ defmodule Backend.SmsGateway do
       }
 
       enqueue_opts =
-        [kind: "otp", ttl_seconds: code_ttl_seconds(), idempotency_key: key] ++
-          owner_opts(opts)
+        [kind: "otp", ttl_seconds: otp.ttl, idempotency_key: key] ++ owner_opts(opts)
 
       # Queue first, then store the code: if a racing duplicate request won,
       # the code its SMS carries must stay the valid one.
       case Messages.enqueue(client, attrs, enqueue_opts) do
         {:ok, message} ->
-          :ok = store_code(client, phone, code)
-          Outbox.kick()
-          {:ok, message}
+          :ok = CodeStore.put(client, phone, code, otp.ttl)
+
+          if test? do
+            # Nothing is sent: the caller gets the code to type in instead
+            Messages.complete_test(message)
+            {:ok, %{Messages.get(message.id) | test_code: code}}
+          else
+            Outbox.kick()
+            {:ok, message}
+          end
 
         {:existing, message} ->
           RateLimiter.release(reservation)
@@ -162,16 +171,21 @@ defmodule Backend.SmsGateway do
           | {:error, {:invalid, atom(), String.t()}}
   def queue_message(client, params, opts \\ []) do
     key = opts[:idempotency_key]
+    test? = opts[:test] == true
 
     cond do
       existing = is_binary(key) && Messages.get_by_idempotency_key(client, key) ->
         {:existing, existing}
 
-      check_capacity(body_segments(params), opts[:user]) != :ok ->
+      not test? and check_capacity(body_segments(params), opts[:user]) != :ok ->
         {:error, :daily_limit_reached}
 
       true ->
         case Messages.enqueue(client, params, [idempotency_key: key] ++ owner_opts(opts)) do
+          {:ok, message} when test? ->
+            Messages.complete_test(message)
+            {:ok, Messages.get(message.id)}
+
           {:ok, message} ->
             Outbox.kick()
             {:ok, message}
@@ -197,8 +211,75 @@ defmodule Backend.SmsGateway do
     [
       user_id: opts[:user] && opts[:user].id,
       device_id: opts[:device_id],
-      api_key_id: opts[:api_key_id]
+      api_key_id: opts[:api_key_id],
+      test: opts[:test] == true
     ]
+  end
+
+  # Per-request OTP options, falling back to the account's template and then
+  # the server's: `:template` (must contain {code}; {minutes} is the expiry),
+  # `:code_length` (4-8 digits) and `:expires_in` (60-3600 seconds).
+  defp otp_options(opts) do
+    with {:ok, template} <- otp_template(opts[:template], opts[:user]),
+         {:ok, length} <-
+           int_option(opts[:code_length], :code_length, 4..8, default_code_length()),
+         {:ok, ttl} <- int_option(opts[:expires_in], :expires_in, 60..3600, code_ttl_seconds()) do
+      {:ok, %{template: template, length: length, ttl: ttl}}
+    end
+  end
+
+  defp otp_template(nil, user) do
+    {:ok, (user && user.otp_template) || default_template()}
+  end
+
+  defp otp_template(template, _user) when is_binary(template) do
+    cond do
+      byte_size(template) > 300 ->
+        {:error, {:invalid, :template, "must be at most 300 characters"}}
+
+      template =~ ~r/%?\{code\}/ ->
+        {:ok, template}
+
+      true ->
+        {:error, {:invalid, :template, "must contain {code}"}}
+    end
+  end
+
+  defp otp_template(_template, _user),
+    do: {:error, {:invalid, :template, "must be a string containing {code}"}}
+
+  defp int_option(nil, _field, _range, default), do: {:ok, default}
+
+  defp int_option(value, field, first..last//_ = range, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> int_option(int, field, range, default)
+      _ -> {:error, {:invalid, field, "must be a number from #{first} to #{last}"}}
+    end
+  end
+
+  defp int_option(value, field, first..last//_ = range, _default) do
+    if is_integer(value) and value in range,
+      do: {:ok, value},
+      else: {:error, {:invalid, field, "must be a number from #{first} to #{last}"}}
+  end
+
+  defp default_code_length, do: Application.get_env(:backend, :code_length, 6)
+
+  defp default_template,
+    do:
+      Application.get_env(
+        :backend,
+        :sms_template,
+        "Your verification code is: %{code}. Valid for 5 minutes."
+      )
+
+  # Fill {code} and {minutes} (either "{x}" or "%{x}")
+  defp render_template(template, code, ttl_seconds) do
+    minutes = Integer.to_string(max(div(ttl_seconds + 59, 60), 1))
+
+    template
+    |> String.replace(["%{code}", "{code}"], code)
+    |> String.replace(["%{minutes}", "{minutes}"], minutes)
   end
 
   @doc """
@@ -279,14 +360,7 @@ defmodule Backend.SmsGateway do
     if Outbox.capacity_available?(segments, user), do: :ok, else: {:error, :daily_limit_reached}
   end
 
-  defp render_message(code) do
-    Application.get_env(
-      :backend,
-      :sms_template,
-      "Your verification code is: %{code}. Valid for 5 minutes."
-    )
-    |> String.replace("%{code}", code)
-  end
+  defp render_message(code), do: render_template(default_template(), code, code_ttl_seconds())
 
   defp deliver_sms(phone, code) do
     message = render_message(code)

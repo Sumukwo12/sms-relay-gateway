@@ -107,7 +107,11 @@ config :backend,
   # register as an admin. Env: ADMIN_EMAIL + ADMIN_PASSWORD
   admin: nil,
   # Mark the session cookie Secure (on in prod, behind HTTPS)
-  secure_cookies: false
+  secure_cookies: false,
+
+  # Country code added to numbers written locally (0712…, 712…). Env:
+  # DEFAULT_COUNTRY_CODE
+  default_country_code: "254"
 
 config :backend, Backend.Repo, journal_mode: :wal
 

@@ -9,7 +9,12 @@ defmodule BackendWeb.V1.Owner do
   @doc "Owner options for `Backend.SmsGateway`, or a halted 422 response."
   def opts(conn, params) do
     user = conn.assigns[:api_user]
-    base = [user: user, api_key_id: conn.assigns[:api_key_id]]
+
+    base = [
+      user: user,
+      api_key_id: conn.assigns[:api_key_id],
+      test: conn.assigns[:api_test] == true
+    ]
 
     case {user, params["device_id"]} do
       {_, nil} ->

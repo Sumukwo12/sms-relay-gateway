@@ -5,11 +5,12 @@ defmodule BackendWeb.AccountController do
     GET    /api/account                  overview: user, usage, phones, webhook secret
     POST   /api/account/password         {current_password, new_password}
     POST   /api/account/webhook-secret   rotate the webhook signing secret
+    PATCH  /api/account/settings         {webhook_url?, otp_template?}
     GET    /api/account/devices          linked phones
     PATCH  /api/account/devices/:id      {name}
     DELETE /api/account/devices/:id      sign the phone out
     GET    /api/account/api-keys
-    POST   /api/account/api-keys         {name} → the key, shown once
+    POST   /api/account/api-keys         {name, mode?: "live" | "test"} → the key, shown once
     DELETE /api/account/api-keys/:id
     GET    /api/account/messages         latest 100 messages
     POST   /api/account/console/sms      {to, body, device_id?}  test send
@@ -30,6 +31,8 @@ defmodule BackendWeb.AccountController do
       success: true,
       user: AccountJSON.user(user),
       webhook_secret: user.webhook_secret,
+      webhook_url: user.webhook_url,
+      otp_template: user.otp_template,
       usage: %{
         sent_last_24h: Messages.sent_last_24h(user.id),
         queued: Messages.queue_depth(user.id),
@@ -49,6 +52,23 @@ defmodule BackendWeb.AccountController do
          ) do
       :ok -> json(conn, %{success: true})
       {:error, errors} -> AccountJSON.errors_response(conn, errors)
+    end
+  end
+
+  def update_settings(conn, params) do
+    case Accounts.update_settings(
+           conn.assigns.current_user,
+           Map.take(params, ["webhook_url", "otp_template"])
+         ) do
+      {:ok, user} ->
+        json(conn, %{
+          success: true,
+          webhook_url: user.webhook_url,
+          otp_template: user.otp_template
+        })
+
+      {:error, errors} ->
+        AccountJSON.errors_response(conn, errors)
     end
   end
 
@@ -92,7 +112,11 @@ defmodule BackendWeb.AccountController do
   end
 
   def create_api_key(conn, params) do
-    case Accounts.create_api_key(conn.assigns.current_user, params["name"]) do
+    case Accounts.create_api_key(
+           conn.assigns.current_user,
+           params["name"],
+           params["mode"] || "live"
+         ) do
       {:ok, api_key, key} ->
         conn
         |> put_status(:created)

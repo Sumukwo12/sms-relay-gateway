@@ -58,7 +58,7 @@ export default function MessagesPage() {
                       </td>
                       <td className="px-2 py-2.5 text-xs">{m.kind === "otp" ? "Code" : "SMS"}{m.segments > 1 ? ` · ${m.segments} parts` : ""}</td>
                       <td className="px-2 py-2.5">
-                        <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>
+                        <Badge tone={STATUS_TONE[m.status]}>{m.status}</Badge>{m.test && <span className="ml-1"><Badge tone="blue">test</Badge></span>}
                         {m.error && <p className="mt-1 max-w-[16rem] text-xs text-red-600 dark:text-red-400">{m.error}</p>}
                       </td>
                       <td className="px-2 py-2.5 text-xs text-zinc-500">{m.reference ?? "—"}</td>

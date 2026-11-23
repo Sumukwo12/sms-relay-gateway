@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { changePassword, getOverview, rotateWebhookSecret } from "../../lib/account";
+import { changePassword, getOverview, rotateWebhookSecret, updateSettings } from "../../lib/account";
 import { useLoad } from "../../lib/use-load";
 import { Alert, Button, Card, CopyButton, Field, PageHeader } from "../../components/ui";
 import { useSession } from "../session";
@@ -29,10 +29,57 @@ export default function SettingsPage() {
             </div>
           </dl>
         </Card>
+        <IntegrationSettings />
         <WebhookSecret />
         <PasswordForm />
       </div>
     </>
+  );
+}
+
+function IntegrationSettings() {
+  const { data } = useLoad(getOverview);
+  // Local edits, falling back to the saved values until the user types
+  const [webhookUrl, setWebhookUrl] = useState<string | null>(null);
+  const [template, setTemplate] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const urlValue = webhookUrl ?? data?.webhook_url ?? "";
+  const templateValue = template ?? data?.otp_template ?? "";
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setPending(true);
+    const res = await updateSettings({ webhook_url: urlValue, otp_template: templateValue });
+    setPending(false);
+    setResult(res.ok ? { ok: true, text: "Saved." } : { ok: false, text: res.error.message });
+  }
+
+  return (
+    <Card title="Integration" description="Defaults for every API call; a request can still override them.">
+      <form onSubmit={onSubmit} className="space-y-4">
+        <Field
+          id="webhook-url"
+          label="Webhook URL"
+          type="url"
+          placeholder="https://example.com/sms-events"
+          value={urlValue}
+          onChange={(e) => setWebhookUrl(e.target.value)}
+          hint="Receives message.sent / delivered / failed for messages without their own callback_url, plus device.connected / device.disconnected when a phone comes and goes. Leave empty to turn off."
+        />
+        <Field
+          id="otp-template"
+          label="Verification SMS text"
+          placeholder="Your Acme code is {code}. It expires in {minutes} minutes."
+          value={templateValue}
+          onChange={(e) => setTemplate(e.target.value)}
+          hint="Must contain {code}; {minutes} is replaced by the expiry. Leave empty for the default."
+        />
+        {result && <Alert tone={result.ok ? "success" : "error"}>{result.text}</Alert>}
+        <Button type="submit" pending={pending} disabled={!data}>Save</Button>
+      </form>
+    </Card>
   );
 }
 

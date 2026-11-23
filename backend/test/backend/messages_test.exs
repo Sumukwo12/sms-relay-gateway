@@ -28,7 +28,7 @@ defmodule Backend.MessagesTest do
     end
 
     test "rejects invalid fields" do
-      assert {:error, :to, _} = Messages.enqueue("c", %{to: "0712345678", body: "Hi"})
+      assert {:error, :to, _} = Messages.enqueue("c", %{to: "07123", body: "Hi"})
       assert {:error, :body, _} = Messages.enqueue("c", %{to: @phone, body: "   "})
       assert {:error, :body, _} = Messages.enqueue("c", %{to: @phone})
 

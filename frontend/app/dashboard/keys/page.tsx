@@ -4,11 +4,12 @@ import { useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
 import { createApiKey, getApiKeys, revokeApiKey } from "../../lib/account";
 import { useLoad } from "../../lib/use-load";
-import { Alert, Button, Card, CopyButton, Field, PageHeader, Spinner, timeAgo } from "../../components/ui";
+import { Alert, Badge, Button, Card, CopyButton, Field, PageHeader, Spinner, timeAgo } from "../../components/ui";
 
 export default function KeysPage() {
   const { data, error, reload } = useLoad(getApiKeys);
   const [name, setName] = useState("");
+  const [mode, setMode] = useState<"live" | "test">("live");
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState<{ name: string; key: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -17,7 +18,7 @@ export default function KeysPage() {
     e.preventDefault();
     setPending(true);
     setFormError(null);
-    const res = await createApiKey(name.trim());
+    const res = await createApiKey(name.trim(), mode);
     setPending(false);
 
     if (res.ok) {
@@ -43,6 +44,15 @@ export default function KeysPage() {
         description="Each system that sends SMS through your gateway gets its own key. Keep them secret, like passwords."
       />
 
+      <div className="mb-4">
+        <Alert tone="info">
+          <strong>Test keys</strong> (<code>sk_test_…</code>) behave like live keys but send no SMS:
+          messages go straight to &ldquo;delivered&rdquo;, webhooks still fire, nothing counts
+          against your limit, and <code>/v1/otp/send</code> returns the code as{" "}
+          <code>test_code</code>. They work before your account is approved.
+        </Alert>
+      </div>
+
       <Card title="Create a key" className="mb-4">
         <form onSubmit={onCreate} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
@@ -54,6 +64,19 @@ export default function KeysPage() {
               onChange={(e) => setName(e.target.value)}
               hint="So you can tell your keys apart."
             />
+          </div>
+          <div>
+            <label htmlFor="key-mode" className="block text-sm font-medium">Type</label>
+            <select
+              id="key-mode"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as "live" | "test")}
+              className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
+            >
+              <option value="live">Live: sends real SMS</option>
+              <option value="test">Test: simulates, sends nothing</option>
+            </select>
+            <p className="mt-1 text-xs text-zinc-500">&nbsp;</p>
           </div>
           <Button type="submit" pending={pending} disabled={!name.trim()} className="sm:mb-5">
             Create key
@@ -89,7 +112,7 @@ export default function KeysPage() {
               {data.api_keys.map((key) => (
                 <li key={key.id} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
-                    <p className="font-medium">{key.name}</p>
+                    <p className="flex items-center gap-2 font-medium">{key.name} <Badge tone={key.mode === "test" ? "blue" : "green"}>{key.mode}</Badge></p>
                     <p className="text-xs text-zinc-500">
                       <code>{key.prefix}…</code> · created {timeAgo(key.created_at)} · last used{" "}
                       {timeAgo(key.last_used_at)}

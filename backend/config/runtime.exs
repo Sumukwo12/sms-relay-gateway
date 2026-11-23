@@ -80,6 +80,7 @@ if config_env() != :test do
     alert_queue_age_seconds: env_int.("ALERT_QUEUE_AGE_SECONDS"),
     alert_battery_percent: env_int.("ALERT_BATTERY_PERCENT"),
     user_daily_send_limit: env_int.("USER_DAILY_SEND_LIMIT"),
+    default_country_code: System.get_env("DEFAULT_COUNTRY_CODE"),
     admin:
       with(
         email when is_binary(email) and email != "" <- System.get_env("ADMIN_EMAIL"),

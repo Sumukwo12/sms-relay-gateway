@@ -59,27 +59,62 @@ defmodule Backend.Webhooks do
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @doc "Queue the webhook for the message's current status, if it has one."
+  @doc """
+  Queue the webhook for the message's current status: to its `callback_url`,
+  or else to its owner's account webhook URL, if either is set.
+  """
   @spec notify(Message.t()) :: :ok
-  def notify(%Message{callback_url: url, status: status} = message)
-      when is_binary(url) and is_map_key(@events, status) do
-    now = DateTime.utc_now()
+  def notify(%Message{status: status} = message) when is_map_key(@events, status) do
+    case message.callback_url || Accounts.webhook_url(message.user_id) do
+      url when is_binary(url) ->
+        # Snapshot now, so each event reports the status it is about
+        payload = %{event: @events[status], message: Messages.to_public(message)}
+        enqueue(message.id, message.client, url, @events[status], payload)
 
+      nil ->
+        :ok
+    end
+  end
+
+  def notify(_message), do: :ok
+
+  @doc """
+  Tell a user's account webhook that one of their phones connected
+  (`"device.connected"`) or disconnected (`"device.disconnected"`).
+  """
+  @spec device_event(pos_integer(), map(), String.t()) :: :ok
+  def device_event(user_id, device, event) when is_integer(user_id) do
+    case Accounts.webhook_url(user_id) do
+      url when is_binary(url) ->
+        payload = %{
+          event: event,
+          device: %{id: device.id, name: device.name},
+          at: DateTime.utc_now()
+        }
+
+        # Keyed by device, so a phone's events arrive in order
+        enqueue("device:#{device.id}", Backend.Accounts.User.client(user_id), url, event, payload)
+
+      nil ->
+        :ok
+    end
+  end
+
+  def device_event(_user_id, _device, _event), do: :ok
+
+  defp enqueue(key, client, url, event, payload) do
     Repo.insert!(%Delivery{
-      message_id: message.id,
-      client: message.client,
+      message_id: key,
+      client: client,
       url: url,
-      event: @events[status],
-      # Snapshot now, so each event reports the status it is about
-      payload: Jason.encode!(%{event: @events[status], message: Messages.to_public(message)}),
+      event: event,
+      payload: Jason.encode!(payload),
       status: "pending",
-      next_attempt_at: now
+      next_attempt_at: DateTime.utc_now()
     })
 
     kick()
   end
-
-  def notify(_message), do: :ok
 
   @doc "The signature header value for `body` signed with `secret`."
   @spec sign(binary(), binary()) :: String.t()

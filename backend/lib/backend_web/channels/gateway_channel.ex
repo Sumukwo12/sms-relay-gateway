@@ -44,7 +44,11 @@ defmodule BackendWeb.GatewayChannel do
 
     case PhoneModem.register_phone(self(), owner) do
       :ok ->
-        if owner.device_id, do: Accounts.touch_device(owner.device_id)
+        if owner.device_id do
+          Accounts.touch_device(owner.device_id)
+          device_event(owner, "device.connected")
+        end
+
         Logger.info("[GatewayChannel] Phone connected: #{inspect(self())} #{describe(owner)}")
         # Send anything that queued up while the phone was offline
         Outbox.kick()
@@ -108,10 +112,28 @@ defmodule BackendWeb.GatewayChannel do
   @impl true
   def terminate(_reason, %{assigns: %{probe: true}}), do: :ok
 
-  def terminate(reason, _socket) do
+  def terminate(reason, socket) do
     Logger.info("[GatewayChannel] Channel terminated: #{inspect(reason)}")
     PhoneModem.unregister_phone(self())
+
+    # Not when the same phone already reconnected (it replaced this connection)
+    with %{device_id: id, user_id: user_id} = owner when is_integer(id) <- socket.assigns[:owner],
+         false <- Enum.any?(PhoneModem.connected(user_id), &(&1.device_id == id)) do
+      device_event(owner, "device.disconnected")
+    end
+
     :ok
+  end
+
+  defp device_event(%{device_id: id, user_id: user_id}, event) do
+    case Backend.Repo.get(Backend.Accounts.Device, id) do
+      nil -> :ok
+      device -> Backend.Webhooks.device_event(user_id, device, event)
+    end
+  rescue
+    # Never let a webhook problem break the phone connection
+    exception ->
+      Logger.error("[GatewayChannel] #{event} webhook failed: #{Exception.message(exception)}")
   end
 
   # ── Authentication ──────────────────────────────────────────────────────────

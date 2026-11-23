@@ -2,7 +2,8 @@ defmodule BackendWeb.V1.OtpController do
   @moduledoc """
   Verification codes for integrated systems.
 
-    POST /v1/otp/send    — {phone, reference?, callback_url?}; the gateway
+    POST /v1/otp/send    — {phone, reference?, callback_url?, template?, code_length?,
+                           expires_in?}; the gateway
                            generates the code and queues the SMS
     POST /v1/otp/verify  — {phone, code}; only codes this system requested match
   """
@@ -18,7 +19,10 @@ defmodule BackendWeb.V1.OtpController do
         [
           reference: params["reference"],
           callback_url: params["callback_url"],
-          idempotency_key: Idempotency.key(conn, params)
+          idempotency_key: Idempotency.key(conn, params),
+          template: params["template"],
+          code_length: params["code_length"],
+          expires_in: params["expires_in"]
         ] ++ owner_opts
 
       queue_code(conn, phone, opts)
@@ -30,13 +34,22 @@ defmodule BackendWeb.V1.OtpController do
   defp queue_code(conn, phone, opts) do
     case SmsGateway.queue_verification_code(phone, conn.assigns.api_client, opts) do
       {:ok, message} ->
-        conn
-        |> put_status(:accepted)
-        |> json(%{
+        body = %{
           success: true,
           message: Messages.to_public(message),
-          expires_in_seconds: SmsGateway.code_ttl_seconds()
-        })
+          expires_in_seconds:
+            max(
+              ceil(DateTime.diff(message.expires_at, DateTime.utc_now(), :millisecond) / 1000),
+              0
+            )
+        }
+
+        # Test keys get the code back, since no SMS is sent
+        body = if message.test_code, do: Map.put(body, :test_code, message.test_code), else: body
+
+        conn
+        |> put_status(:accepted)
+        |> json(body)
 
       {:existing, message} ->
         remaining = max(DateTime.diff(message.expires_at, DateTime.utc_now()), 0)

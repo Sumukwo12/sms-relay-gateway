@@ -17,14 +17,15 @@ defmodule Backend.ApiKeys do
           client: String.t(),
           name: String.t(),
           user: User.t() | nil,
-          api_key_id: pos_integer() | nil
+          api_key_id: pos_integer() | nil,
+          test: boolean()
         }
 
   @doc "Who a presented key belongs to."
   @spec authenticate(String.t() | nil) :: {:ok, identity()} | :error
   def authenticate(key) when is_binary(key) and key != "" do
     case server_key(key) do
-      {:ok, name} -> {:ok, %{client: name, name: name, user: nil, api_key_id: nil}}
+      {:ok, name} -> {:ok, %{client: name, name: name, user: nil, api_key_id: nil, test: false}}
       :error -> user_key(key)
     end
   end
@@ -45,7 +46,8 @@ defmodule Backend.ApiKeys do
            client: User.client(api_key.user),
            name: api_key.name,
            user: api_key.user,
-           api_key_id: api_key.id
+           api_key_id: api_key.id,
+           test: api_key.mode == "test"
          }}
 
       :error ->

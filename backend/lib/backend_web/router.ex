@@ -59,6 +59,7 @@ defmodule BackendWeb.Router do
     get "/", AccountController, :show
     post "/password", AccountController, :change_password
     post "/webhook-secret", AccountController, :rotate_webhook_secret
+    patch "/settings", AccountController, :update_settings
     get "/devices", AccountController, :devices
     patch "/devices/:id", AccountController, :update_device
     delete "/devices/:id", AccountController, :delete_device

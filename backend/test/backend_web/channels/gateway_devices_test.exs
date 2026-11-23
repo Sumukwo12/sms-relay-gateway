@@ -173,4 +173,31 @@ defmodule BackendWeb.GatewayDevicesTest do
     assert [%{info: %{"battery" => 80}}] = PhoneModem.connected(ctx.alice.id)
     assert [%{app_version: "1.2.0"}] = Accounts.list_devices(ctx.alice.id)
   end
+
+  test "the account webhook hears when a phone connects and disconnects", ctx do
+    {:ok, _} = Accounts.update_settings(ctx.alice, %{webhook_url: "https://example.com/hook"})
+    Req.Test.set_req_test_to_shared(%{})
+    test_pid = self()
+
+    Req.Test.stub(Backend.Webhooks, fn conn ->
+      {:ok, raw, conn} = Plug.Conn.read_body(conn)
+      send(test_pid, {:webhook, Jason.decode!(raw)})
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    socket = join(ctx.alice_token)
+    Backend.Webhooks.drain()
+
+    assert_receive {:webhook,
+                    %{"event" => "device.connected", "device" => %{"name" => "Alice's phone"}}},
+                   2_000
+
+    ref = Process.monitor(socket.channel_pid)
+    {:ok, _} = Accounts.revoke_device(ctx.alice_phone)
+    assert_receive {:DOWN, ^ref, :process, _, _}
+    _ = :sys.get_state(PhoneModem)
+    Backend.Webhooks.drain()
+
+    assert_receive {:webhook, %{"event" => "device.disconnected"}}, 2_000
+  end
 end

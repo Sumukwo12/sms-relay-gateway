@@ -167,6 +167,7 @@ default to the real modem.
 | `PHONE_GATEWAY_TOKEN` | –                         | Shared token for the legacy server phone (accounts don't need it) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | –             | The admin account, created or promoted at boot                  |
 | `USER_DAILY_SEND_LIMIT` | `200`                   | SMS parts per user per rolling 24h (admins can override per user) |
+| `DEFAULT_COUNTRY_CODE` | `254`                     | Country code added to local numbers like `0712345678`           |
 | `MODEM_PORT`          | `COM3`                    | Serial port of the USB modem (when `MODEM_ADAPTER=uart`)        |
 | `MODEM_BAUD`          | `9600`                    | Serial baud rate                                                |
 | `CODE_TTL_SECONDS`    | `300`                     | How long a code stays valid                                     |
@@ -199,9 +200,24 @@ build time. See `frontend/.env.example`.
 ## Integration API (`/v1`) — for your own systems
 
 Your other systems send verification codes and notifications through the
-`/v1` API. Each system gets its own key in `API_KEYS` and sends it as
-`Authorization: Bearer <key>` (or `X-Api-Key: <key>`). Generate a key with
-`mix phx.gen.secret 32`.
+`/v1` API, with an API key sent as `Authorization: Bearer <key>` (or
+`X-Api-Key: <key>`). Users create keys in the dashboard (`/dashboard/keys`);
+server-level keys can still be set in `API_KEYS` (`mix phx.gen.secret 32`).
+The full contract is in [`frontend/public/openapi.json`](frontend/public/openapi.json),
+served at `/openapi.json`, and the dashboard's Integration docs page has
+curl/PHP/Node.js/Python examples.
+
+- **Test keys** (`sk_test_…`) simulate everything: messages go straight to
+  `delivered`, webhooks fire, nothing reaches a phone or counts against
+  limits, and `/v1/otp/send` returns the code as `test_code`.
+- **Local numbers** (`0712345678`, `712345678`) get `DEFAULT_COUNTRY_CODE`
+  (default `254`).
+- **OTP options**: `template` (with `{code}` and optional `{minutes}`),
+  `code_length` (4–8) and `expires_in` (60–3600 s); each account can set a
+  default template.
+- **Account webhook URL** (dashboard Settings) receives `message.*` events
+  for messages without a `callback_url`, plus `device.connected` /
+  `device.disconnected`.
 
 Messages are stored in an SQLite outbox and sent **one at a time** through
 the modem/phone. If the phone is offline they wait in the queue and go out

@@ -17,6 +17,8 @@ defmodule Backend.Accounts.User do
     field(:status, :string, default: "pending")
     field(:daily_limit, :integer)
     field(:webhook_secret, :string, redact: true)
+    field(:webhook_url, :string)
+    field(:otp_template, :string)
 
     timestamps()
   end
@@ -56,6 +58,22 @@ defmodule Backend.Accounts.User do
     |> validate_inclusion(:role, @roles)
     |> validate_inclusion(:status, @statuses)
     |> validate_number(:daily_limit, greater_than_or_equal_to: 0, less_than_or_equal_to: 100_000)
+  end
+
+  @doc "The user's own integration settings: default webhook URL and OTP text."
+  def settings_changeset(user, attrs) do
+    attrs =
+      Map.new(attrs, fn
+        {k, v} when is_binary(v) -> {k, String.trim(v)}
+        pair -> pair
+      end)
+
+    user
+    |> cast(attrs, [:webhook_url, :otp_template], empty_values: [nil, ""])
+    |> validate_length(:webhook_url, max: 500)
+    |> validate_format(:webhook_url, ~r{^https?://[^\s/]+}, message: "must be an http(s) URL")
+    |> validate_length(:otp_template, max: 300)
+    |> validate_format(:otp_template, ~r/\{code\}/, message: "must contain {code}")
   end
 
   def normalize_email(email) when is_binary(email),
@@ -107,6 +125,8 @@ defmodule Backend.Accounts.ApiKey do
     field(:name, :string)
     field(:prefix, :string)
     field(:key_hash, :string, redact: true)
+    # "live" sends SMS; "test" (sk_test_…) only simulates them
+    field(:mode, :string, default: "live")
     field(:last_used_at, :utc_datetime_usec)
     field(:revoked_at, :utc_datetime_usec)
     timestamps()

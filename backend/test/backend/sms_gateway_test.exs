@@ -24,7 +24,7 @@ defmodule Backend.SmsGatewayTest do
     end
 
     test "rejects numbers that are not E.164" do
-      for bad <- ["0712345678", "+0712345678", "+123", "abc", "", nil, 254_712_345_678] do
+      for bad <- ["07123", "+0712345678", "+123", "abc", "", nil, 254_712_345_678] do
         assert {:error, :invalid_phone} = SmsGateway.send_verification_code(bad)
       end
 

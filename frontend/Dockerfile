@@ -24,6 +24,8 @@ WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 COPY --from=builder --chown=node /app/.next/standalone ./
 COPY --from=builder --chown=node /app/.next/static ./.next/static
+# Files served as-is (openapi.json, images)
+COPY --from=builder --chown=node /app/public ./public
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

@@ -155,6 +155,21 @@ defmodule Backend.Accounts do
     user |> Ecto.Changeset.change(webhook_secret: Token.generate("whsec_", 24)) |> Repo.update!()
   end
 
+  @doc "Update the user's default webhook URL and OTP text (empty clears them)."
+  def update_settings(%User{} = user, attrs) do
+    case user |> User.settings_changeset(stringify(attrs)) |> Repo.update() do
+      {:ok, user} -> {:ok, user}
+      {:error, changeset} -> {:error, errors(changeset)}
+    end
+  end
+
+  @doc "The account's default webhook URL, if it set one."
+  def webhook_url(user_id) when is_integer(user_id) do
+    Repo.one(from(u in User, where: u.id == ^user_id, select: u.webhook_url))
+  end
+
+  def webhook_url(_), do: nil
+
   @doc "The secret that signs webhooks for a tenant (`user:<id>`), if it is a user."
   def webhook_secret_for_client(client) do
     with id when is_integer(id) <- User.client_user_id(client),
@@ -369,20 +384,27 @@ defmodule Backend.Accounts do
 
   # ── API keys ────────────────────────────────────────────────────────────────
 
-  @doc "Create an API key. Returns `{:ok, api_key, key}`; the key is shown once."
-  def create_api_key(%User{} = user, name) do
-    case clean_name(name, nil) do
-      nil ->
+  @doc """
+  Create an API key, `"live"` (sends SMS) or `"test"` (`sk_test_…`, only
+  simulates them). Returns `{:ok, api_key, key}`; the key is shown once.
+  """
+  def create_api_key(%User{} = user, name, mode \\ "live") do
+    cond do
+      mode not in ["live", "test"] ->
+        {:error, %{mode: "must be live or test"}}
+
+      is_nil(clean_name(name, nil)) ->
         {:error, %{name: "is required"}}
 
-      name ->
-        key = Token.generate("sk_")
+      true ->
+        key = Token.generate(if mode == "test", do: "sk_test_", else: "sk_")
 
         api_key =
           Repo.insert!(%ApiKey{
             user_id: user.id,
-            name: name,
-            prefix: String.slice(key, 0, 10),
+            name: clean_name(name, nil),
+            mode: mode,
+            prefix: String.slice(key, 0, if(mode == "test", do: 14, else: 10)),
             key_hash: Token.hash(key)
           })
 

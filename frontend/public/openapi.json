@@ -1,0 +1,245 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SMS Gateway API",
+    "version": "1.0.0",
+    "description": "Send verification codes and SMS through your own Android phone running SMS Relay. Authenticate with an API key from the dashboard: `Authorization: Bearer sk_…`. Test keys (`sk_test_…`) simulate everything without sending SMS.\n\nPhone numbers may be international (`+254712345678`) or local (`0712345678`, `712345678`); local numbers get the server's default country code."
+  },
+  "servers": [{ "url": "/", "description": "This gateway" }],
+  "security": [{ "apiKey": [] }],
+  "paths": {
+    "/v1/otp/send": {
+      "post": {
+        "summary": "Send a verification code",
+        "description": "The gateway creates a numeric code, texts it from your phone and remembers it for /v1/otp/verify. Codes are rate-limited per number.",
+        "operationId": "sendOtp",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["phone"],
+                "properties": {
+                  "phone": { "type": "string", "example": "+254712345678" },
+                  "template": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "description": "SMS text; must contain {code}. {minutes} is replaced by the expiry. Defaults to your account's template.",
+                    "example": "Your Acme code is {code}. It expires in {minutes} minutes."
+                  },
+                  "code_length": { "type": "integer", "minimum": 4, "maximum": 8, "default": 6 },
+                  "expires_in": { "type": "integer", "minimum": 60, "maximum": 3600, "default": 300, "description": "Seconds the code stays valid" },
+                  "reference": { "type": "string", "maxLength": 100, "description": "Your own id, returned with the message" },
+                  "callback_url": { "type": "string", "format": "uri", "description": "Webhook for this message (overrides your account webhook)" },
+                  "device_id": { "type": "integer", "description": "Send through this phone of yours" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Code queued (or, with a test key, simulated)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "$ref": "#/components/schemas/Message" },
+                    "expires_in_seconds": { "type": "integer" },
+                    "test_code": { "type": "string", "description": "Test keys only: the code that was \"sent\"" }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/otp/verify": {
+      "post": {
+        "summary": "Check a verification code",
+        "description": "A correct code is consumed. After 5 wrong guesses the code is discarded.",
+        "operationId": "verifyOtp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["phone", "code"],
+                "properties": {
+                  "phone": { "type": "string", "example": "+254712345678" },
+                  "code": { "type": "string", "example": "483921" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verified",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "verified": { "type": "boolean", "const": true } } } } }
+          },
+          "422": { "description": "invalid_code or expired_or_missing", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "429": { "description": "too_many_attempts (the code was discarded)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "summary": "Send an SMS",
+        "operationId": "sendMessage",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["to", "body"],
+                "properties": {
+                  "to": { "type": "string", "example": "+254712345678" },
+                  "body": { "type": "string", "maxLength": 480, "example": "Your order #1042 has shipped." },
+                  "reference": { "type": "string", "maxLength": 100 },
+                  "callback_url": { "type": "string", "format": "uri" },
+                  "device_id": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued (or, with a test key, simulated)",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "$ref": "#/components/schemas/Message" } } } } }
+          },
+          "200": { "description": "Idempotent replay: the message an earlier request with the same key queued" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/messages/{id}": {
+      "get": {
+        "summary": "Get a message's status",
+        "operationId": "getMessage",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "example": "msg_0123456789abcdef0123" }],
+        "responses": {
+          "200": { "description": "The message", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "$ref": "#/components/schemas/Message" } } } } } },
+          "404": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "summary": "Your gateway's health",
+        "description": "Whether a phone of yours is online, your queue and your daily usage.",
+        "operationId": "getStatus",
+        "responses": { "200": { "description": "Status" } }
+      }
+    }
+  },
+  "webhooks": {
+    "messageEvent": {
+      "post": {
+        "summary": "message.sent, message.delivered, message.failed",
+        "description": "Sent to the message's callback_url, or else your account webhook URL. Verify `X-Signature: sha256=<hex HMAC-SHA256 of the raw body>` with your webhook secret. Answer 2xx; other answers are retried with backoff.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": { "type": "string", "enum": ["message.sent", "message.delivered", "message.failed"] },
+                  "message": { "$ref": "#/components/schemas/Message" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Received" } }
+      }
+    },
+    "deviceEvent": {
+      "post": {
+        "summary": "device.connected, device.disconnected",
+        "description": "Sent to your account webhook URL when one of your phones connects to or disconnects from the gateway.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": { "type": "string", "enum": ["device.connected", "device.disconnected"] },
+                  "device": { "type": "object", "properties": { "id": { "type": "integer" }, "name": { "type": "string" } } },
+                  "at": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Received" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": { "type": "http", "scheme": "bearer", "description": "An API key from the dashboard (sk_… or sk_test_…)" }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": { "type": "string", "maxLength": 100 },
+        "description": "Retrying with the same key returns the original message instead of sending twice."
+      }
+    },
+    "responses": {
+      "Error": { "description": "Error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["otp", "notification"] },
+          "to": { "type": "string" },
+          "status": { "type": "string", "enum": ["queued", "sending", "sent", "delivered", "failed"] },
+          "attempts": { "type": "integer" },
+          "error": { "type": ["string", "null"] },
+          "reference": { "type": ["string", "null"] },
+          "segments": { "type": "integer", "description": "SMS parts; each counts toward your daily limit" },
+          "device_id": { "type": ["integer", "null"] },
+          "test": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "sent_at": { "type": ["string", "null"], "format": "date-time" },
+          "delivered_at": { "type": ["string", "null"], "format": "date-time" },
+          "failed_at": { "type": ["string", "null"], "format": "date-time" },
+          "expires_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "const": false },
+          "error": {
+            "type": "string",
+            "examples": ["unauthorized", "account_pending", "invalid_request", "rate_limited", "daily_limit_reached", "invalid_code", "expired_or_missing", "too_many_attempts", "not_found"]
+          },
+          "message": { "type": "string" },
+          "field": { "type": "string" },
+          "retry_after_seconds": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

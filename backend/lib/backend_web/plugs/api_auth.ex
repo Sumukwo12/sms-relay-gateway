@@ -21,7 +21,9 @@ defmodule BackendWeb.Plugs.ApiAuth do
         deny(conn, :forbidden, "account_suspended", "This account has been suspended.")
 
       {:ok, %{user: user} = identity} ->
-        if conn.method == "POST" and user != nil and not Accounts.can_send?(user) do
+        # Test keys send nothing, so pending accounts can integrate already
+        if conn.method == "POST" and user != nil and not identity.test and
+             not Accounts.can_send?(user) do
           deny(
             conn,
             :forbidden,
@@ -33,6 +35,7 @@ defmodule BackendWeb.Plugs.ApiAuth do
           |> assign(:api_client, identity.client)
           |> assign(:api_user, user)
           |> assign(:api_key_id, identity.api_key_id)
+          |> assign(:api_test, identity.test)
         end
 
       :error ->

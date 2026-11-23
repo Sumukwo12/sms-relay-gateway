@@ -25,6 +25,7 @@ defmodule BackendWeb.AccountJSON do
       id: k.id,
       name: k.name,
       prefix: k.prefix,
+      mode: k.mode,
       last_used_at: k.last_used_at,
       created_at: k.inserted_at
     }

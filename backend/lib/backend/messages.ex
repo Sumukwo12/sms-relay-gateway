@@ -63,7 +63,8 @@ defmodule Backend.Messages do
         expires_at: DateTime.add(now, ttl, :second),
         user_id: opts[:user_id],
         device_id: opts[:device_id],
-        api_key_id: opts[:api_key_id]
+        api_key_id: opts[:api_key_id],
+        test: opts[:test] == true
       }
 
       insert_new(message)
@@ -158,7 +159,7 @@ defmodule Backend.Messages do
   def sent_last_24h(scope \\ :system) do
     since = DateTime.add(now(), -86_400, :second)
 
-    from(m in Message, where: m.sent_at > ^since)
+    from(m in Message, where: m.sent_at > ^since and not m.test)
     |> scoped(scope)
     |> Repo.aggregate(:sum, :segments) || 0
   end
@@ -169,7 +170,7 @@ defmodule Backend.Messages do
     since = DateTime.add(now(), -86_400, :second)
 
     from(m in Message,
-      where: m.sent_at > ^since and not is_nil(m.user_id),
+      where: m.sent_at > ^since and not is_nil(m.user_id) and not m.test,
       group_by: m.user_id,
       select: {m.user_id, sum(m.segments)}
     )
@@ -227,8 +228,10 @@ defmodule Backend.Messages do
       sent_at: m.sent_at,
       delivered_at: m.delivered_at,
       failed_at: m.failed_at,
-      expires_at: m.expires_at
+      expires_at: m.expires_at,
+      test: m.test
     }
+    |> then(fn map -> if m.test_code, do: Map.put(map, :test_code, m.test_code), else: map end)
   end
 
   # ── Outbox state transitions ───────────────────────────────────────────────
@@ -250,6 +253,7 @@ defmodule Backend.Messages do
     query =
       from(m in Message,
         where: m.status == "queued" and m.next_attempt_at <= ^now and m.expires_at > ^now,
+        where: not m.test,
         order_by: [asc: m.inserted_at],
         limit: 1
       )
@@ -366,6 +370,16 @@ defmodule Backend.Messages do
   """
   def apply_phone_result(id, "sent", _error), do: mark_sent(id)
   def apply_phone_result(_id, _status, _error), do: :ignored
+
+  @doc """
+  Simulate sending a test-key message: it goes straight to `sent` and then
+  `delivered` (firing the same webhooks a real one would) without reaching a
+  phone.
+  """
+  def complete_test(%Message{test: true, id: id}) do
+    {:ok, _} = mark_sent(id)
+    mark_delivered(id)
+  end
 
   @doc "Fail every queued message whose time in the queue ran out."
   @spec expire_stale() :: non_neg_integer()
