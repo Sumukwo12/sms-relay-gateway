@@ -5,7 +5,13 @@
     "version": "1.0.0",
     "description": "Send verification codes and SMS through your own Android phone running SMS Relay. Authenticate with an API key from the dashboard: `Authorization: Bearer sk_…`. Test keys (`sk_test_…`) simulate everything without sending SMS.\n\nPhone numbers may be international (`+254712345678`) or local (`0712345678`, `712345678`); local numbers get the server's default country code."
   },
-  "servers": [{ "url": "/", "description": "This gateway" }],
+  "servers": [
+    {
+      "url": "https://{host}",
+      "description": "Your gateway",
+      "variables": { "host": { "default": "sms.strand.co.ke", "description": "The gateway's hostname" } }
+    }
+  ],
   "security": [{ "apiKey": [] }],
   "paths": {
     "/v1/otp/send": {
