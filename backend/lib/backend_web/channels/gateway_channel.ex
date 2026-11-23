@@ -18,30 +18,47 @@ defmodule BackendWeb.GatewayChannel do
   alias Backend.Modem.Phone, as: PhoneModem
 
   @impl true
-  def join("gateway:phone", _payload, socket) do
-    token = socket.assigns[:token]
-    expected_token = expected_token()
+  def join("gateway:phone", payload, socket) do
+    cond do
+      not valid_token?(socket.assigns[:token]) ->
+        Logger.warning("[GatewayChannel] Rejected connection: invalid gateway token")
+        {:error, %{reason: "invalid_token"}}
 
-    if is_binary(expected_token) and byte_size(expected_token) > 0 and
-         is_binary(token) and Plug.Crypto.secure_compare(token, expected_token) do
-      case PhoneModem.register_phone(self()) do
-        :ok ->
-          Logger.info("[GatewayChannel] Phone connected: #{inspect(self())}")
-          # Send anything that queued up while the phone was offline
-          Outbox.kick()
-          {:ok, socket}
+      # The app's "Test Connection" only checks the URL and token. Registering it
+      # would evict the live relay connection (newest phone wins) and then leave
+      # no phone at all once the probe disconnects.
+      is_map(payload) and payload["probe"] == true ->
+        {:ok, assign(socket, :probe, true)}
 
-        {:error, reason} ->
-          Logger.error("[GatewayChannel] Failed to register phone: #{inspect(reason)}")
-          {:error, %{reason: to_string(reason)}}
-      end
-    else
-      Logger.warning("[GatewayChannel] Rejected connection: invalid gateway token")
-      {:error, %{reason: "invalid_token"}}
+      true ->
+        register(socket)
     end
   end
 
+  defp register(socket) do
+    case PhoneModem.register_phone(self()) do
+      :ok ->
+        Logger.info("[GatewayChannel] Phone connected: #{inspect(self())}")
+        # Send anything that queued up while the phone was offline
+        Outbox.kick()
+        {:ok, socket}
+
+      {:error, reason} ->
+        Logger.error("[GatewayChannel] Failed to register phone: #{inspect(reason)}")
+        {:error, %{reason: to_string(reason)}}
+    end
+  end
+
+  defp valid_token?(token) do
+    expected = expected_token()
+
+    is_binary(expected) and byte_size(expected) > 0 and is_binary(token) and
+      Plug.Crypto.secure_compare(token, expected)
+  end
+
   @impl true
+  def handle_in(_event, _payload, %{assigns: %{probe: true}} = socket), do: {:noreply, socket}
+
   def handle_in("sms_result", %{"id" => id} = payload, socket) do
     status = Map.get(payload, "status")
     error = Map.get(payload, "error")
@@ -83,6 +100,8 @@ defmodule BackendWeb.GatewayChannel do
   end
 
   @impl true
+  def terminate(_reason, %{assigns: %{probe: true}}), do: :ok
+
   def terminate(reason, _socket) do
     Logger.info("[GatewayChannel] Channel terminated: #{inspect(reason)}")
     PhoneModem.unregister_phone(self())

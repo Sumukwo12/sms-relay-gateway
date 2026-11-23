@@ -30,6 +30,15 @@ export function isPrivateNetworkUrl(urlStr: string): boolean {
   }
 }
 
+/**
+ * The Phoenix client appends "/websocket" to the endpoint itself, so a URL
+ * pasted as ".../phone/websocket" would connect to ".../phone/websocket/websocket"
+ * and 404. Accept both forms.
+ */
+export function normalizeSocketUrl(urlStr: string): string {
+  return urlStr.trim().replace(/\/+$/, '').replace(/\/websocket$/i, '');
+}
+
 export function getUrlSecurityWarning(urlStr: string): string | null {
   if (!urlStr) return null;
   const lower = urlStr.trim().toLowerCase();

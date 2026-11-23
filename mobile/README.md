@@ -101,8 +101,10 @@ Alternatively, you can copy `app-release.apk` to your phone via USB file transfe
    - `POST_NOTIFICATIONS`: Keeps the persistent foreground service alive.
 3. **Configure Connection** in the **Setup** tab:
    - **WebSocket URL**:
-     - Local development: `ws://192.168.1.X:4000/phone/websocket` (replace with your server machine's LAN IP).
-     - Production / Cloud: `wss://api.yourdomain.com/phone/websocket`.
+     - Local development: `ws://192.168.1.X:4000/phone` (replace with your server machine's LAN IP).
+     - Production / Cloud: `wss://api.yourdomain.com/phone`.
+
+     The Phoenix client appends `/websocket` itself; the app strips it if you paste it anyway.
    - **Gateway Token**: Enter the secret token that matches `PHONE_GATEWAY_TOKEN` set in your backend environment.
    - **SIM Card**: Select SIM 1 or SIM 2.
 4. **Test Connection**: Tap **Test Connection**. A green badge should confirm successful handshake and Phoenix Channel join.

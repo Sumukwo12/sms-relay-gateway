@@ -7,8 +7,20 @@ import {
   getUrlSecurityWarning,
   isPrivateNetworkUrl,
   isValidE164,
+  normalizeSocketUrl,
   resultsFromLogs,
 } from './relayLogic.ts';
+
+test('normalizeSocketUrl accepts the endpoint with or without /websocket', () => {
+  for (const input of [
+    'wss://sms.example.com/phone',
+    'wss://sms.example.com/phone/',
+    'wss://sms.example.com/phone/websocket',
+    ' wss://sms.example.com/phone/websocket/ ',
+  ]) {
+    assert.equal(normalizeSocketUrl(input), 'wss://sms.example.com/phone');
+  }
+});
 
 test('resultsFromLogs answers server retries after an app restart', () => {
   const logs = [

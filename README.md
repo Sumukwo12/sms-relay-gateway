@@ -80,9 +80,13 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 2. Grant the required permissions (**SMS**, **Phone State**, **Notifications**).
 3. In the **Setup** tab:
    - **WebSocket URL**:
-     - Local LAN testing: `ws://192.168.1.X:4000/phone/websocket`
-     - Production: `wss://sms.strand.co.ke/phone/websocket`
-   - **Gateway Token**: Enter the matching `PHONE_GATEWAY_TOKEN`.
+     - Local LAN testing: `ws://192.168.1.X:4000/phone`
+     - Production: `wss://sms.strand.co.ke/phone`
+
+     Leave off `/websocket`: the Phoenix client adds it. (App builds before
+     the URL fix fail with "Cannot reach server" if it is included.)
+   - **Gateway Token**: Enter the matching `PHONE_GATEWAY_TOKEN`
+     (on the server it is in `deploy/.env`).
    - **SIM Card**: Select your active SIM slot.
 4. Tap **Test Connection** to confirm connectivity, then **Save Settings**.
 5. In the **Dashboard** tab, flip the service toggle to **ON**.

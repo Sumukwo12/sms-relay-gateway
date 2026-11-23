@@ -29,7 +29,7 @@ import {
   setServiceEnabled,
   updateLogDelivery,
 } from './storage';
-import { isValidE164, resultsFromLogs, SmsOutcome } from './relayLogic';
+import { isValidE164, normalizeSocketUrl, resultsFromLogs, SmsOutcome } from './relayLogic';
 import {
   stopForegroundService,
   updateForegroundNotification,
@@ -171,7 +171,7 @@ class RelayManager {
 
   private connectSocket() {
     try {
-      const url = this.settings.serverUrl.trim();
+      const url = normalizeSocketUrl(this.settings.serverUrl);
       const token = this.settings.token.trim();
 
       this.socket = new Socket(url, {
@@ -502,7 +502,7 @@ class RelayManager {
     token: string
   ): Promise<{ success: boolean; message: string }> {
     return new Promise((resolve) => {
-      const testSocket = new Socket(url.trim(), {
+      const testSocket = new Socket(normalizeSocketUrl(url), {
         params: { token: token.trim() },
         timeout: 8000,
       });
@@ -528,7 +528,8 @@ class RelayManager {
       });
 
       testSocket.onOpen(() => {
-        const testChannel = testSocket.channel('gateway:phone', {});
+        // probe: the server checks the token without replacing the live relay connection
+        const testChannel = testSocket.channel('gateway:phone', { probe: true });
         testChannel
           .join()
           .receive('ok', () => {

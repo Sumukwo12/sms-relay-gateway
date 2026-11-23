@@ -172,6 +172,48 @@ defmodule BackendWeb.GatewayChannelTest do
     assert Task.await(task2) == :ok
   end
 
+  describe "probe joins (the app's Test Connection)" do
+    test "accept a valid token without registering a phone" do
+      {:ok, _, _probe} =
+        connect_phone_socket()
+        |> subscribe_and_join(GatewayChannel, "gateway:phone", %{"probe" => true})
+
+      assert PhoneModem.status() == :disconnected
+    end
+
+    test "reject an invalid token" do
+      assert {:error, %{reason: "invalid_token"}} =
+               connect_phone_socket("wrong_token")
+               |> subscribe_and_join(GatewayChannel, "gateway:phone", %{"probe" => true})
+    end
+
+    test "leave the live phone connected when the probe comes and goes" do
+      {:ok, _, live} =
+        connect_phone_socket()
+        |> subscribe_and_join(GatewayChannel, "gateway:phone")
+
+      live_ref = Process.monitor(live.channel_pid)
+
+      {:ok, _, probe} =
+        connect_phone_socket()
+        |> subscribe_and_join(GatewayChannel, "gateway:phone", %{"probe" => true})
+
+      Process.unlink(probe.channel_pid)
+      probe_ref = Process.monitor(probe.channel_pid)
+      Process.exit(probe.channel_pid, :shutdown)
+      assert_receive {:DOWN, ^probe_ref, :process, _, _}
+
+      _ = :sys.get_state(PhoneModem)
+      refute_received {:DOWN, ^live_ref, :process, _, _}
+      assert PhoneModem.status() == :ready
+
+      task = Task.async(fn -> PhoneModem.send_sms("+254712345678", "OTP: 111111") end)
+      assert_push "send_sms", %{"id" => id}
+      push(live, "sms_result", %{"id" => id, "status" => "sent"})
+      assert Task.await(task) == :ok
+    end
+  end
+
   test "sms_delivered and device_info" do
     {:ok, _, socket} =
       connect_phone_socket()
