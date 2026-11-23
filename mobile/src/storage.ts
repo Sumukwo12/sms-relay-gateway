@@ -34,6 +34,30 @@ export async function loadSettings(): Promise<RelaySettings> {
   };
 }
 
+// ── Signed-in account (not secret: the device token lives in SecureStore) ──
+
+const ASYNC_KEY_ACCOUNT = '@sms_relay_account_v1';
+
+export interface StoredAccount {
+  server: string;
+  email: string;
+  deviceName: string;
+}
+
+export async function saveAccount(account: StoredAccount | null): Promise<void> {
+  if (account) await AsyncStorage.setItem(ASYNC_KEY_ACCOUNT, JSON.stringify(account));
+  else await AsyncStorage.removeItem(ASYNC_KEY_ACCOUNT);
+}
+
+export async function loadAccount(): Promise<StoredAccount | null> {
+  try {
+    const raw = await AsyncStorage.getItem(ASYNC_KEY_ACCOUNT);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getLogs(): Promise<LogEntry[]> {
   try {
     const raw = await AsyncStorage.getItem(ASYNC_KEY_LOGS);

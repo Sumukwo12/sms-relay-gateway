@@ -39,6 +39,25 @@ export function normalizeSocketUrl(urlStr: string): string {
   return urlStr.trim().replace(/\/+$/, '').replace(/\/websocket$/i, '');
 }
 
+/**
+ * The https:// origin of the gateway from whatever the user typed: a bare
+ * host ("sms.example.com"), a site URL, or a ws(s):// socket URL.
+ */
+export function httpBaseFromInput(input: string): string | null {
+  let value = input.trim();
+  if (!value) return null;
+  if (!/^[a-z]+:\/\//i.test(value)) value = `https://${value}`;
+  value = value.replace(/^wss:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://');
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function getUrlSecurityWarning(urlStr: string): string | null {
   if (!urlStr) return null;
   const lower = urlStr.trim().toLowerCase();

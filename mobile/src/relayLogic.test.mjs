@@ -6,10 +6,20 @@ import {
   addPendingDelivery,
   getUrlSecurityWarning,
   isPrivateNetworkUrl,
+  httpBaseFromInput,
   isValidE164,
   normalizeSocketUrl,
   resultsFromLogs,
 } from './relayLogic.ts';
+
+test('httpBaseFromInput turns what the user typed into the site origin', () => {
+  assert.equal(httpBaseFromInput('sms.example.com'), 'https://sms.example.com');
+  assert.equal(httpBaseFromInput(' https://sms.example.com/dashboard '), 'https://sms.example.com');
+  assert.equal(httpBaseFromInput('wss://sms.example.com/phone/websocket'), 'https://sms.example.com');
+  assert.equal(httpBaseFromInput('ws://192.168.1.5:4000/phone'), 'http://192.168.1.5:4000');
+  assert.equal(httpBaseFromInput(''), null);
+  assert.equal(httpBaseFromInput('ftp://x'), null);
+});
 
 test('normalizeSocketUrl accepts the endpoint with or without /websocket', () => {
   for (const input of [

@@ -22,6 +22,15 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
   const [serverUrl, setServerUrl] = useState(currentSettings.serverUrl);
   const [token, setToken] = useState(currentSettings.token);
   const [selectedSubId, setSelectedSubId] = useState<number | null>(currentSettings.selectedSubId);
+  const signedIn = relayManager.getAccount() !== null;
+  // Manual URL + server token: the legacy setup, for servers without accounts
+  const [showAdvanced, setShowAdvanced] = useState(!signedIn && !!currentSettings.token);
+
+  // The SIM choice is saved right away (with or without an account)
+  const chooseSim = async (subId: number) => {
+    setSelectedSubId(subId);
+    await relayManager.updateSettings({ ...relayManager.getSettings(), selectedSubId: subId });
+  };
 
   const [simCards, setSimCards] = useState<SimCardInfo[]>([]);
   const [isLoadingSims, setIsLoadingSims] = useState(false);
@@ -99,17 +108,26 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
 
   return (
     <ScrollView style={[styles.container, themeStyles.container]} contentContainerStyle={styles.content}>
-      {/* Server Configuration */}
+      {/* Server Configuration (advanced: most people sign in on the Account tab) */}
       <View style={[styles.card, themeStyles.card]}>
-        <Text style={[styles.cardTitle, themeStyles.text]}>Server Connection</Text>
-        <Text style={[styles.cardSubtitle, themeStyles.subText]}>
-          Configure your Phoenix backend WebSocket endpoint.
-        </Text>
+        <TouchableOpacity onPress={() => setShowAdvanced(!showAdvanced)} activeOpacity={0.7}>
+          <View style={styles.simHeader}>
+            <Text style={[styles.cardTitle, themeStyles.text]}>Advanced: server token</Text>
+            <Text style={styles.refreshButtonText}>{showAdvanced ? 'Hide' : 'Show'}</Text>
+          </View>
+          <Text style={[styles.cardSubtitle, themeStyles.subText]}>
+            {signedIn
+              ? 'Not needed: this phone is connected through your account.'
+              : 'Only for servers set up with a shared PHONE_GATEWAY_TOKEN. Otherwise sign in on the Account tab.'}
+          </Text>
+        </TouchableOpacity>
 
+        {showAdvanced && (
+        <>
         <Text style={[styles.inputLabel, themeStyles.subText]}>WebSocket URL</Text>
         <TextInput
           style={[styles.input, themeStyles.input]}
-          placeholder="ws://192.168.1.10:4000/phone/websocket"
+          placeholder="wss://sms.example.com/phone"
           placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
           value={serverUrl}
           onChangeText={setServerUrl}
@@ -170,6 +188,8 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
             <Text style={styles.saveButtonText}>Save Settings</Text>
           </TouchableOpacity>
         </View>
+        </>
+        )}
       </View>
 
       {/* SIM Selection Card */}
@@ -178,7 +198,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
           <View>
             <Text style={[styles.cardTitle, themeStyles.text]}>Outgoing SIM Card</Text>
             <Text style={[styles.cardSubtitle, themeStyles.subText]}>
-              Select the SIM used to transmit OTP messages.
+              The SIM your messages are sent from. Saved as soon as you pick one.
             </Text>
           </View>
           <TouchableOpacity style={styles.refreshButton} onPress={refreshSimList} disabled={isLoadingSims}>
@@ -205,7 +225,7 @@ export const SetupScreen: React.FC<SetupScreenProps> = ({ isDark }) => {
                   themeStyles.simOption,
                   isSelected && styles.simOptionSelected,
                 ]}
-                onPress={() => setSelectedSubId(sim.subscriptionId)}
+                onPress={() => chooseSim(sim.subscriptionId)}
               >
                 <View style={styles.simRadio}>
                   {isSelected && <View style={styles.simRadioInner} />}

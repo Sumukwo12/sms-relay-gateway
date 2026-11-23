@@ -12,6 +12,8 @@ import {
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { SetupScreen } from './src/screens/SetupScreen';
 import { LogScreen } from './src/screens/LogScreen';
+import { AccountScreen } from './src/screens/AccountScreen';
+import Constants from 'expo-constants';
 import { relayManager } from './src/relayManager';
 import {
   checkPermissions,
@@ -20,7 +22,14 @@ import {
   PermissionStatus,
 } from './src/permissions';
 
-type TabType = 'dashboard' | 'logs' | 'setup';
+type TabType = 'dashboard' | 'logs' | 'account' | 'setup';
+
+const TABS: { key: TabType; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'logs', label: 'Logs' },
+  { key: 'account', label: 'Account' },
+  { key: 'setup', label: 'Setup' },
+];
 
 export default function App() {
   const systemColorScheme = useColorScheme();
@@ -32,7 +41,13 @@ export default function App() {
 
   useEffect(() => {
     // Initialize Relay state and storage, then resume the relay if it was on
-    relayManager.initialize().then(() => relayManager.resumeIfEnabled());
+    relayManager.initialize().then(() => {
+      // Not connected to any server yet: start on the sign-in screen
+      if (!relayManager.getAccount() && !relayManager.getSettings().token) {
+        setActiveTab('account');
+      }
+      return relayManager.resumeIfEnabled();
+    });
 
     // Check runtime permissions on launch
     checkPermissions().then((status) => {
@@ -67,7 +82,9 @@ export default function App() {
           </View>
           <Text style={[styles.appTitle, themeStyles.text]}>Relay</Text>
         </View>
-        <Text style={[styles.appVersion, themeStyles.subText]}>v1.0.0</Text>
+        <Text style={[styles.appVersion, themeStyles.subText]}>
+          v{Constants.expoConfig?.version ?? '1.0.0'}
+        </Text>
       </View>
 
       {/* Permissions Warning Strip if not all granted */}
@@ -87,52 +104,28 @@ export default function App() {
       <View style={styles.screenContainer}>
         {activeTab === 'dashboard' && <DashboardScreen isDark={isDark} />}
         {activeTab === 'logs' && <LogScreen isDark={isDark} />}
+        {activeTab === 'account' && <AccountScreen isDark={isDark} />}
         {activeTab === 'setup' && <SetupScreen isDark={isDark} />}
       </View>
 
       {/* Bottom Navigation Bar */}
       <View style={[styles.tabBar, themeStyles.tabBar]}>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'dashboard' && styles.tabItemActive]}
-          onPress={() => setActiveTab('dashboard')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'dashboard' ? styles.tabTextActive : themeStyles.tabTextInactive,
-            ]}
+        {TABS.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.tabItem, activeTab === key && styles.tabItemActive]}
+            onPress={() => setActiveTab(key)}
           >
-            Dashboard
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'logs' && styles.tabItemActive]}
-          onPress={() => setActiveTab('logs')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'logs' ? styles.tabTextActive : themeStyles.tabTextInactive,
-            ]}
-          >
-            Logs
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === 'setup' && styles.tabItemActive]}
-          onPress={() => setActiveTab('setup')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'setup' ? styles.tabTextActive : themeStyles.tabTextInactive,
-            ]}
-          >
-            Setup
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === key ? styles.tabTextActive : themeStyles.tabTextInactive,
+              ]}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Permissions Explanation Modal */}

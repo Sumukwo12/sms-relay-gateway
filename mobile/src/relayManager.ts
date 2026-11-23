@@ -22,13 +22,17 @@ import {
   getLogs,
   getPendingDeliveries,
   isServiceEnabled,
+  loadAccount,
   loadSettings,
   maskPhoneNumber,
   removePendingDeliveryId,
+  saveAccount,
   saveSettings,
   setServiceEnabled,
   updateLogDelivery,
 } from './storage';
+import type { StoredAccount } from './storage';
+import { signOutDevice, type SignInResult } from './account';
 import { isValidE164, normalizeSocketUrl, resultsFromLogs, SmsOutcome } from './relayLogic';
 import {
   stopForegroundService,
@@ -64,6 +68,8 @@ class RelayManager {
   private telemetryInterval: any = null;
 
   private listeners = new Set<() => void>();
+  // The account this phone is signed in to (null: none, or a legacy server token)
+  private account: StoredAccount | null = null;
 
   constructor() {
     this.setupDeliveryListener();
@@ -100,7 +106,38 @@ class RelayManager {
     return this.isServiceRunning;
   }
 
+  public getAccount(): StoredAccount | null {
+    return this.account;
+  }
+
+  /** Use the device token the server issued when this phone signed in, and start relaying. */
+  public async signIn(server: string, email: string, result: SignInResult): Promise<void> {
+    this.account = { server, email, deviceName: result.device.name };
+    await saveAccount(this.account);
+    await this.updateSettings({
+      ...this.settings,
+      serverUrl: result.socket_url,
+      token: result.device_token,
+    });
+    await this.startService();
+  }
+
+  /** Stop relaying and sign this phone out of the account (server-side too, if reachable). */
+  public async signOut(): Promise<void> {
+    const { account, settings } = this;
+    await this.stopService();
+
+    if (account && settings.token) {
+      await signOutDevice(account.server, settings.token).catch(() => {});
+    }
+
+    this.account = null;
+    await saveAccount(null);
+    await this.updateSettings({ ...settings, token: '' });
+  }
+
   public async initialize(): Promise<void> {
+    this.account = await loadAccount();
     this.settings = await loadSettings();
     this.logs = await getLogs();
     this.stats = calculateStats(this.logs);
