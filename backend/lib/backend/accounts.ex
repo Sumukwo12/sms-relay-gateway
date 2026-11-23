@@ -63,8 +63,17 @@ defmodule Backend.Accounts do
 
         case Repo.get_by(User, email: email) do
           nil ->
-            with {:ok, user} <- register(%{email: email, password: password, name: "Admin"}) do
-              promote_admin(user)
+            case register(%{email: email, password: password, name: "Admin"}) do
+              {:ok, user} ->
+                promote_admin(user)
+
+              {:error, errors} ->
+                Logger.error(
+                  "[Accounts] Could not create the admin from ADMIN_EMAIL/ADMIN_PASSWORD: " <>
+                    Enum.map_join(errors, "; ", fn {field, msg} -> "#{field} #{msg}" end)
+                )
+
+                {:error, errors}
             end
 
           %User{role: "admin", status: "approved"} = user ->
