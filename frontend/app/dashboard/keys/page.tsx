@@ -44,7 +44,12 @@ export default function KeysPage() {
         description="Each system that sends SMS through your gateway gets its own key. Keep them secret, like passwords."
       />
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-3">
+        <Alert tone="warning">
+          Keep keys on your server (for example in <code>.env</code>). Never put them in browser JavaScript, a
+          mobile app or a public repository: anyone with a key can send SMS through your phone. If one leaks,
+          revoke it here.
+        </Alert>
         <Alert tone="info">
           <strong>Test keys</strong> (<code>sk_test_…</code>) behave like live keys but send no SMS:
           messages go straight to &ldquo;delivered&rdquo;, webhooks still fire, nothing counts

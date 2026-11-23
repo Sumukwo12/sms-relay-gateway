@@ -3,13 +3,37 @@ import {
   BadgeCheck,
   Code2,
   KeyRound,
+  FlaskConical,
   ListChecks,
+  Lock,
   MessageSquareText,
   ShieldCheck,
   Smartphone,
   UserPlus,
   Wallet,
+  Webhook,
 } from "lucide-react";
+
+const CREDENTIALS = [
+  {
+    icon: KeyRound,
+    name: "Live API key",
+    sample: "sk_…",
+    text: "Sends real SMS and verification codes through your own phone. Created and revoked in the dashboard.",
+  },
+  {
+    icon: FlaskConical,
+    name: "Test API key",
+    sample: "sk_test_…",
+    text: "For building and testing: nothing is sent, nothing counts against your limit, and OTP codes come back in the response.",
+  },
+  {
+    icon: Webhook,
+    name: "Webhook secret",
+    sample: "whsec_…",
+    text: "Lets your web app check that delivery and phone-status events really came from the gateway.",
+  },
+];
 
 const STEPS = [
   {
@@ -157,6 +181,72 @@ export default function Home() {
   -H "Content-Type: application/json" \\
   -d '{"phone": "+254712345678"}'`}</pre>
             <p className="mt-3 text-xs text-zinc-400">Full documentation is in your dashboard after signing in.</p>
+          </div>
+        </section>
+
+        <section className="mt-16" aria-labelledby="developers">
+          <h2 id="developers" className="text-center text-2xl font-semibold tracking-tight">
+            For developers: connect your website
+          </h2>
+          <p className="mx-auto mt-2 max-w-2xl text-center text-sm text-zinc-600 dark:text-zinc-400">
+            Every account gets its own credentials in the dashboard. No waiting for anyone to hand out keys.
+          </p>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            {CREDENTIALS.map(({ icon: Icon, name, sample, text }) => (
+              <div key={name} className="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+                <div className="flex items-center gap-2">
+                  <Icon className="h-5 w-5 text-emerald-600" aria-hidden />
+                  <h3 className="font-semibold">{name}</h3>
+                </div>
+                <code className="mt-2 inline-block rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-900">
+                  {sample}
+                </code>
+                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{text}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
+              <h3 className="font-semibold">Integrate in four steps</h3>
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-zinc-600 dark:text-zinc-400">
+                <li>Create an account. A test key works straight away, even before approval.</li>
+                <li>
+                  Create a key and put it in your web app&apos;s <strong>server-side</strong> config, e.g.{" "}
+                  <code className="text-xs">SMS_GATEWAY_KEY=sk_test_…</code> in <code className="text-xs">.env</code>.
+                </li>
+                <li>
+                  From your backend, call <code className="text-xs">POST /v1/otp/send</code> when a user enters their
+                  number, and <code className="text-xs">POST /v1/otp/verify</code> when they type the code.
+                </li>
+                <li>When it works, swap in a live key: the same calls now send real SMS from your phone.</li>
+              </ol>
+              <p className="mt-4 text-xs text-zinc-500">
+                Examples in curl, PHP, Node.js and Python are in the dashboard; the full API is at{" "}
+                <a href="/openapi.json" className="font-medium text-emerald-700 underline dark:text-emerald-400">
+                  /openapi.json
+                </a>{" "}
+                (import it into Postman).
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 dark:border-amber-800 dark:bg-amber-950/50">
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-amber-700 dark:text-amber-400" aria-hidden />
+                <h3 className="font-semibold text-amber-900 dark:text-amber-200">Keep API keys on your server</h3>
+              </div>
+              <p className="mt-3 text-sm text-amber-900 dark:text-amber-200">
+                Never put an API key in browser JavaScript, a mobile app or a public repository. Anyone who sees it
+                can send SMS through your phone and use up your airtime.
+              </p>
+              <p className="mt-2 text-sm text-amber-900 dark:text-amber-200">
+                Your web page calls <em>your own</em> backend; your backend calls the gateway with the key. If a key
+                leaks, revoke it in the dashboard and create a new one.
+              </p>
+              <pre className="mt-4 overflow-x-auto rounded-lg bg-white/70 p-3 font-mono text-xs text-amber-950 dark:bg-black/30 dark:text-amber-100">{`Browser  ──►  your backend  ──►  SMS Gateway  ──►  your phone  ──►  SMS
+              (holds sk_…)`}</pre>
+            </div>
           </div>
         </section>
       </main>
