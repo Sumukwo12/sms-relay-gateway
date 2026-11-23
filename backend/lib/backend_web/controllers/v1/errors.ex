@@ -11,14 +11,14 @@ defmodule BackendWeb.V1.Errors do
 
   def not_found(conn), do: error(conn, :not_found, "not_found", "No such message.")
 
-  def daily_limit(conn),
-    do:
-      error(
-        conn,
-        :too_many_requests,
-        "daily_limit_reached",
-        "The gateway's daily SMS limit has been reached. Try again later."
-      )
+  def daily_limit(conn) do
+    message =
+      if conn.assigns[:api_user],
+        do: "Your account's daily SMS limit has been reached. Try again later.",
+        else: "The gateway's daily SMS limit has been reached. Try again later."
+
+    error(conn, :too_many_requests, "daily_limit_reached", message)
+  end
 
   def error(conn, status, code, message, extra \\ %{}) do
     conn

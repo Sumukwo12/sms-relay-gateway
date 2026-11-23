@@ -1,12 +1,35 @@
 # SMS Phone Verification
 
-Verify phone numbers with one-time SMS codes sent through a USB GSM modem, an Android phone gateway, or our dedicated SMS Relay companion app.
+A self-hosted SMS gateway, a low-cost alternative to per-message SMS
+providers. People sign up, link their own Android phone (with the SMS
+Relay app) and get API keys; their systems send verification codes and
+notifications through that phone and its SIM.
 
-| Folder      | What it is                                                              |
-| ----------- | ----------------------------------------------------------------------- |
-| `backend/`  | Phoenix JSON API: code generation, storage, rate limiting, modem driver |
-| `frontend/` | Next.js UI: enter phone → receive code → verify                         |
-| `mobile/`   | React Native Android app (SMS Relay): sends verification SMS from SIM   |
+| Folder      | What it is                                                                       |
+| ----------- | -------------------------------------------------------------------------------- |
+| `backend/`  | Phoenix JSON API: accounts, API keys, OTP codes, queue, routing to users' phones |
+| `frontend/` | Next.js site: sign-up, user dashboard, admin, integration docs, `/demo`          |
+| `mobile/`   | React Native Android app (SMS Relay): signs in and sends the SMS from its SIM     |
+
+## Accounts at a glance
+
+1. **Sign up** on the website (`/register`) or in the app. The first account
+   ever created (and any email in `ADMIN_EMAILS`) is an approved **admin**;
+   everyone else is **pending** until an admin approves them on
+   `/dashboard/admin`.
+2. **Link a phone**: install SMS Relay, open the **Account** tab and sign in
+   with the same email and password. The phone gets its own device token and
+   shows up on `/dashboard/phones`.
+3. **Create an API key** on `/dashboard/keys` and call `/v1` (see
+   `/dashboard/docs`, or [Integration API](#integration-api-v1--for-your-own-systems)).
+   Each user's messages go only through their own phones (the most recently
+   connected one, or the `device_id` they pass) and count against their own
+   daily limit (`USER_DAILY_SEND_LIMIT`, default 200; admins can change it
+   per user). Webhooks are signed with the user's webhook secret.
+
+The original single-owner setup still works alongside: `API_KEYS` from the
+environment and the `/demo` page send through the phone signed in with
+`PHONE_GATEWAY_TOKEN`, or else through an admin's phone.
 
 ## Quick start (no modem needed)
 
@@ -78,7 +101,13 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 1. Open **SMS Relay** on the Android device.
 2. Grant the required permissions (**SMS**, **Phone State**, **Notifications**).
-3. In the **Setup** tab:
+3. In the **Account** tab, sign in (or create an account) with the server
+   address (`https://sms.strand.co.ke`, or `http://192.168.1.X:4000` on a
+   LAN), email and password. The relay connects and starts by itself.
+   Pick the sending SIM in the **Setup** tab.
+
+   **Or, the legacy shared token** (no account): open **Setup → Advanced:
+   server token**:
    - **WebSocket URL**:
      - Local LAN testing: `ws://192.168.1.X:4000/phone`
      - Production: `wss://sms.strand.co.ke/phone`
@@ -88,14 +117,14 @@ adb install -r app/build/outputs/apk/release/app-release.apk
    - **Gateway Token**: Enter the matching `PHONE_GATEWAY_TOKEN`
      (on the server it is in `deploy/.env`).
    - **SIM Card**: Select your active SIM slot.
-4. Tap **Test Connection** to confirm connectivity, then **Save Settings**.
-5. In the **Dashboard** tab, flip the service toggle to **ON**.
+   - Tap **Test Connection** to confirm connectivity, then **Save Settings**.
+4. In the **Dashboard** tab, check the service toggle is **ON**.
    - A persistent foreground notification `SMS Relay Active: Connected · 0 sent today` will appear.
    - The relay stays on: it resumes when the app is reopened and starts by
      itself after the phone reboots, until you switch it off. Delivery
      reports that arrive while the phone is offline are sent once it
      reconnects.
-6. Verify status on the server:
+5. Verify status on the server (or on /dashboard/phones):
    ```sh
    curl http://localhost:4000/api/modem/status
    # {"ready":true,"status":"ready"}
@@ -130,7 +159,9 @@ default to the real modem.
 | Variable              | Default                   | Meaning                                                         |
 | --------------------- | ------------------------- | --------------------------------------------------------------- |
 | `MODEM_ADAPTER`       | `mock` (dev), `uart` prod | `mock`, `uart`, `android`, or `phone`                           |
-| `PHONE_GATEWAY_TOKEN` | –                         | Required when `MODEM_ADAPTER=phone`. Secret auth token for app |
+| `PHONE_GATEWAY_TOKEN` | –                         | Shared token for the legacy server phone (accounts don't need it) |
+| `ADMIN_EMAILS`        | –                         | Comma-separated emails that become admins when they sign up     |
+| `USER_DAILY_SEND_LIMIT` | `200`                   | SMS parts per user per rolling 24h (admins can override per user) |
 | `MODEM_PORT`          | `COM3`                    | Serial port of the USB modem (when `MODEM_ADAPTER=uart`)        |
 | `MODEM_BAUD`          | `9600`                    | Serial baud rate                                                |
 | `CODE_TTL_SECONDS`    | `300`                     | How long a code stays valid                                     |
