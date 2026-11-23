@@ -2,8 +2,8 @@
 #
 #   docker build -t sms-gateway ./backend
 #
-# Usually run through deploy/docker-compose.yml, which adds HTTPS (Caddy),
-# a persistent volume for the SQLite database and the environment.
+# Run it behind an HTTPS reverse proxy, with a persistent volume for the
+# SQLite database and the environment (see Deploying in README.md).
 # Bump the versions below together (Elixir >= 1.19); the runner must use the
 # same Debian release as the Elixir image, or the release will not start.
 ARG ELIXIR_IMAGE=elixir:1.20-otp-29-slim
@@ -37,7 +37,7 @@ RUN mix release
 
 FROM ${RUNNER_IMAGE}
 
-# sqlite3 is for backups (deploy/backup.sh)
+# sqlite3 is for database backups (sqlite3 .backup)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     libstdc++6 openssl libncurses6 locales ca-certificates sqlite3 \

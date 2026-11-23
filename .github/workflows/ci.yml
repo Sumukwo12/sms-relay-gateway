@@ -89,18 +89,13 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-  # Lints the scripts that run on the VPS
-  deploy-scripts:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: shellcheck -x deploy/*.sh
-
-  # Deploys main to the VPS once every check passes (see "Deploying" in
-  # README.md). Settings may be repository or `production` environment
-  # variables; the job fails with a clear message if one is missing.
+  # Deploys main to the VPS once every check passes. The server keeps its own
+  # deployment files (docker-compose.yml, Caddyfile, deploy.sh, .env) in
+  # $DEPLOY_PATH/deploy; this job only hands it the new image tags. Settings
+  # may be repository or `production` environment variables; the job fails
+  # with a clear message if one is missing.
   deploy:
-    needs: [backend, backend-image, frontend-image, deploy-scripts, mobile, frontend]
+    needs: [backend, backend-image, frontend-image, mobile, frontend]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
@@ -165,18 +160,16 @@ jobs:
             StrictHostKeyChecking yes
           EOF
 
-      - name: Upload deploy files
-        run: |
-          ssh vps "mkdir -p '$DEPLOY_PATH/deploy'"
-          scp deploy/docker-compose.yml deploy/Caddyfile deploy/backup.sh \
-            deploy/deploy.sh deploy/.env.example "vps:$DEPLOY_PATH/deploy/"
-
       - name: Deploy
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          ssh vps "test -x '$DEPLOY_PATH/deploy/deploy.sh'" || {
+            echo "::error::$DEPLOY_PATH/deploy/deploy.sh is missing on the server"
+            exit 1
+          }
           echo "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u '${{ github.actor }}' --password-stdin"
-          ssh vps "cd '$DEPLOY_PATH/deploy' && chmod +x deploy.sh backup.sh && ./deploy.sh '$BACKEND_IMAGE' '$FRONTEND_IMAGE'"
+          ssh vps "cd '$DEPLOY_PATH/deploy' && ./deploy.sh '$BACKEND_IMAGE' '$FRONTEND_IMAGE'"
 
       - name: Log out of GHCR on the VPS
         if: always()

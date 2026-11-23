@@ -1,3 +1,2 @@
-# Shell scripts and server files run on Linux: keep LF even on Windows checkouts
+# Shell scripts run on Linux: keep LF even on Windows checkouts
 *.sh text eol=lf
-deploy/** text eol=lf

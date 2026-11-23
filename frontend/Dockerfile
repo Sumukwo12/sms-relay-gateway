@@ -3,7 +3,7 @@
 #   docker build -t sms-frontend ./frontend
 #
 # NEXT_PUBLIC_API_URL is inlined at build time. The default "" makes the page
-# call the API on its own origin (/api/...), which is how deploy/ serves it:
+# call the API on its own origin (/api/...), served the usual way:
 # one hostname, with the reverse proxy sending /api, /v1 and /phone to the
 # backend and everything else here.
 FROM node:22-alpine AS deps
