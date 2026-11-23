@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Phone Verification",
-  description: "Verify your phone number with a one-time SMS code.",
+  title: "SMS Gateway",
+  description: "Send verification codes and SMS through your own Android phone.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

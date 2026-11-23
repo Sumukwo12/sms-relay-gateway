@@ -368,7 +368,7 @@ function Feedback({
 const MODEM_LABELS: Record<ModemState, { label: string; dot: string }> = {
   ready: { label: "SMS gateway online", dot: "bg-emerald-500" },
   busy: { label: "SMS gateway busy", dot: "bg-amber-500" },
-  disconnected: { label: "Modem disconnected", dot: "bg-red-500" },
+  disconnected: { label: "Gateway phone offline", dot: "bg-red-500" },
   offline: { label: "Server unreachable", dot: "bg-red-500" },
   unknown: { label: "Checking gateway…", dot: "bg-zinc-400" },
 };

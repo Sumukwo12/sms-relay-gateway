@@ -1,4 +1,4 @@
-// Typed client for the Phoenix SMS verification API (backend/).
+// Typed client for the Phoenix SMS gateway API (backend/).
 
 export const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"
@@ -10,6 +10,7 @@ export type ApiError = {
   success: false;
   error: string;
   message: string;
+  field?: string;
   retry_after_seconds?: number;
   detail?: string;
 };
@@ -29,10 +30,12 @@ export type VerifyCodeOk = {
 
 export type Result<T> = { ok: true; data: T } | { ok: false; error: ApiError };
 
-async function request<T>(path: string, init?: RequestInit): Promise<Result<T>> {
+export async function request<T>(path: string, init?: RequestInit): Promise<Result<T>> {
   try {
     const res = await fetch(`${API_URL}${path}`, {
       ...init,
+      // The dashboard signs in with an HttpOnly session cookie
+      credentials: "include",
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
@@ -61,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<Result<T>> 
       error: {
         success: false,
         error: "network_error",
-        message: `Cannot reach the verification server at ${API_URL}.`,
+        message: `Cannot reach the gateway server at ${API_URL || "this site"}.`,
       },
     };
   }
