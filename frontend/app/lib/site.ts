@@ -13,7 +13,7 @@ export const APP_VERSION = "1.2.0";
 export const APP_SIZE = "71 MB";
 
 // Source code
-export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/Sumukwo12/sms-phone-verification";
+export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/Sumukwo12/sms-relay-gateway";
 
 export const SITE_DESCRIPTION =
   "Turn an Android phone into your own SMS gateway. Send verification codes (OTP) and notifications from your website through your SIM, with no per-message fees.";
